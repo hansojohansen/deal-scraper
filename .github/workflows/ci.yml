@@ -27,8 +27,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v5
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         with:
           python-version: "3.12"
 

@@ -148,7 +148,7 @@ def _iqr_is_outlier(price: int, peer_prices: list[int]) -> bool:
     return price < q1 - IQR_MULT * iqr
 
 
-def _zscore_reason(car: "Car", peer_prices: list[int]) -> str:
+def _reason(car: "Car", peer_prices: list[int]) -> str:
     mean = int(statistics.mean(peer_prices))
     pct = int(abs((car.price - mean) / mean * 100)) if mean else 0
     direction = "below" if car.price < mean else "above"
@@ -188,7 +188,7 @@ async def run_detection(db: AsyncSession) -> dict:
             iqr_flag = _iqr_is_outlier(car.price, peer_prices)
             is_deal = score < Z_THRESHOLD and iqr_flag
             fair_value = None
-            reason = _zscore_reason(car, peer_prices)
+            reason = _reason(car, peer_prices)
             peer_avg = int(statistics.mean(peer_prices))
             peer_size = len(z_peers)
             method = "zscore"
