@@ -12,11 +12,18 @@ class AlertCreate(BaseModel):
     price_max: int | None = None
     mileage_max: int | None = None
     fuel_type: str | None = None
+    min_discount_pct: int | None = None
+
 
 class AlertUpdate(BaseModel):
     is_active: bool | None = None
     price_max: int | None = None
     mileage_max: int | None = None
+    year_min: int | None = None
+    year_max: int | None = None
+    fuel_type: str | None = None
+    min_discount_pct: int | None = None
+
 
 class AlertResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -30,4 +37,5 @@ class AlertResponse(BaseModel):
     mileage_max: int | None
     fuel_type: str | None
     is_active: bool
+    min_discount_pct: int | None
     created_at: datetime

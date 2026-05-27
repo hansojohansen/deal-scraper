@@ -6,6 +6,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
     throw new Error(err.error?.message ?? res.statusText);
   }
+  if (res.status === 204) return undefined as T;
   return res.json();
 }
 
@@ -77,6 +78,7 @@ export interface Alert {
   mileage_max: number | null;
   fuel_type: string | null;
   is_active: boolean;
+  min_discount_pct: number | null;
   created_at: string;
 }
 
@@ -89,22 +91,44 @@ export interface AlertCreate {
   price_max?: number;
   mileage_max?: number;
   fuel_type?: string;
+  min_discount_pct?: number;
+}
+
+export interface CarFilters {
+  brand?: string;
+  model?: string;
+  title?: string;
+  year_min?: string;
+  year_max?: string;
+  price_min?: string;
+  price_max?: string;
+  mileage_max?: string;
+  fuel_type?: string;
 }
 
 export const api = {
   getCars: (params: Record<string, string | number | undefined>) => {
     const q = new URLSearchParams();
-    Object.entries(params).forEach(([k, v]) => v != null && q.set(k, String(v)));
+    Object.entries(params).forEach(([k, v]) => v != null && v !== "" && q.set(k, String(v)));
     return request<CursorPage<Car>>(`/api/v1/cars?${q}`);
   },
+  getModelsByBrand: (brand: string) =>
+    request<string[]>(`/api/v1/cars/brands/${encodeURIComponent(brand)}/models`),
   getStatsSummary: () => request<StatsSummary>("/api/v1/stats/summary"),
   getBrands: () => request<BrandStat[]>("/api/v1/stats/brands"),
   getOutliers: (limit = 50) => request<Outlier[]>(`/api/v1/outliers?limit=${limit}`),
   getAlerts: () => request<Alert[]>("/api/v1/alerts"),
   createAlert: (body: AlertCreate) =>
-    request<Alert>("/api/v1/alerts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    request<Alert>("/api/v1/alerts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
   toggleAlert: (id: number, is_active: boolean) =>
-    request<Alert>(`/api/v1/alerts/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active }) }),
-  deleteAlert: (id: number) =>
-    request<void>(`/api/v1/alerts/${id}`, { method: "DELETE" }),
+    request<Alert>(`/api/v1/alerts/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_active }),
+    }),
+  deleteAlert: (id: number) => request<void>(`/api/v1/alerts/${id}`, { method: "DELETE" }),
 };

@@ -1,10 +1,17 @@
 ﻿from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import AlertMatch, Car, DealAlert
+from backend.db.models import AlertMatch, Car, DealAlert, OutlierScore
 
-_ALERT_CREATE_FIELDS = {"notify_email", "brand", "model", "year_min", "year_max", "price_max", "mileage_max", "fuel_type", "is_active"}
-_ALERT_UPDATE_FIELDS = {"is_active", "price_max", "mileage_max", "year_min", "year_max", "fuel_type"}
+_ALERT_CREATE_FIELDS = {
+    "notify_email", "brand", "model", "year_min", "year_max",
+    "price_max", "mileage_max", "fuel_type", "is_active", "min_discount_pct",
+}
+_ALERT_UPDATE_FIELDS = {
+    "is_active", "price_max", "mileage_max", "year_min", "year_max",
+    "fuel_type", "min_discount_pct",
+}
+
 
 async def create(db: AsyncSession, data: dict) -> DealAlert:
     safe = {k: v for k, v in data.items() if k in _ALERT_CREATE_FIELDS}
@@ -13,9 +20,11 @@ async def create(db: AsyncSession, data: dict) -> DealAlert:
     await db.flush()
     return alert
 
+
 async def get_by_id(db: AsyncSession, alert_id: int) -> DealAlert | None:
     result = await db.execute(select(DealAlert).where(DealAlert.id == alert_id))
     return result.scalar_one_or_none()
+
 
 async def list_active(db: AsyncSession, cursor: int | None = None, limit: int = 20) -> list[DealAlert]:
     q = select(DealAlert).where(DealAlert.is_active.is_(True))
@@ -25,16 +34,19 @@ async def list_active(db: AsyncSession, cursor: int | None = None, limit: int = 
     result = await db.execute(q)
     return list(result.scalars())
 
+
 async def update(db: AsyncSession, alert: DealAlert, data: dict) -> DealAlert:
     for k, v in data.items():
         if k in _ALERT_UPDATE_FIELDS and v is not None:
             setattr(alert, k, v)
     return alert
 
+
 async def delete(db: AsyncSession, alert: DealAlert) -> None:
     await db.delete(alert)
 
-async def match_for_car(db: AsyncSession, car: Car) -> list[DealAlert]:
+
+async def match_for_car(db: AsyncSession, car: Car, outlier: OutlierScore | None = None) -> list[DealAlert]:
     q = select(DealAlert).where(DealAlert.is_active.is_(True))
     if car.brand:
         q = q.where((DealAlert.brand.is_(None)) | (DealAlert.brand == car.brand))
@@ -46,17 +58,28 @@ async def match_for_car(db: AsyncSession, car: Car) -> list[DealAlert]:
         q = q.where((DealAlert.mileage_max.is_(None)) | (DealAlert.mileage_max >= car.mileage))
     result = await db.execute(q)
     alerts = list(result.scalars())
+
+    # Deduplicate already-matched
     if alerts:
         matched = await db.execute(
             select(AlertMatch.alert_id).where(
                 AlertMatch.car_id == car.id,
-                AlertMatch.alert_id.in_([a.id for a in alerts])
+                AlertMatch.alert_id.in_([a.id for a in alerts]),
             )
         )
         already = {r[0] for r in matched}
         alerts = [a for a in alerts if a.id not in already]
+
+    # Apply discount threshold filter
+    if alerts and outlier and outlier.peer_avg_price:
+        actual_pct = int(abs((car.price - outlier.peer_avg_price) / outlier.peer_avg_price * 100))
+        alerts = [
+            a for a in alerts
+            if a.min_discount_pct is None or actual_pct >= a.min_discount_pct
+        ]
+
     return alerts
+
 
 async def record_match(db: AsyncSession, alert_id: int, car_id: int, score: float | None) -> None:
     db.add(AlertMatch(alert_id=alert_id, car_id=car_id, score=score))
-
