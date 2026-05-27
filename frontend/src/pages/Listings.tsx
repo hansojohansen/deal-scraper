@@ -9,7 +9,7 @@ const empty: CarFilters = {};
 
 // Deterministic brand color from name
 const BRAND_COLORS = [
-  "bg-blue-500", "bg-violet-500", "bg-emerald-500", "bg-orange-500",
+  "bg-amber-500", "bg-violet-500", "bg-emerald-500", "bg-orange-500",
   "bg-rose-500", "bg-cyan-500", "bg-amber-500", "bg-teal-500",
 ];
 function brandColor(brand: string | null) {
@@ -26,7 +26,7 @@ function euBadge(deadline: string | null) {
   const yr = 365.25 * 24 * 3600 * 1000;
   if (d < now) return { label: "EU utløpt", cls: "bg-red-100 text-red-700" };
   if (d.getTime() - now.getTime() < yr) return { label: "EU snart", cls: "bg-orange-100 text-orange-700" };
-  return { label: "EU ok", cls: "bg-green-100 text-green-700" };
+  return { label: "EU ok", cls: "bg-green-900/40 text-green-400" };
 }
 
 function CarCard({ car }: { car: Car }) {
@@ -39,7 +39,7 @@ function CarCard({ car }: { car: Car }) {
 
   return (
     <a href={car.url} target="_blank" rel="noreferrer"
-      className="block bg-white rounded-xl border border-gray-200 hover:border-blue-400 hover:shadow-sm transition-all overflow-hidden">
+      className="block bg-slate-800 rounded-xl border border-slate-700 hover:border-blue-400 hover:shadow-sm transition-all overflow-hidden">
       {/* Color header */}
       <div className={`relative h-[100px] ${brandColor(car.brand)} flex items-center justify-center`}>
         <span className="text-white text-4xl font-bold opacity-30 select-none">{initial}</span>
@@ -58,21 +58,21 @@ function CarCard({ car }: { car: Car }) {
 
       {/* Card body */}
       <div className="p-3 space-y-1.5">
-        <p className="font-semibold text-gray-900 text-sm leading-tight line-clamp-1">{car.title}</p>
-        <p className="text-xs text-gray-500">
+        <p className="font-semibold text-slate-100 text-sm leading-tight line-clamp-1">{car.title}</p>
+        <p className="text-xs text-slate-400">
           {car.year} · {car.mileage?.toLocaleString("no")} km
           {car.fuel_type ? ` · ${car.fuel_type}` : ""}
         </p>
-        {car.location && <p className="text-xs text-gray-400">{car.location}</p>}
+        {car.location && <p className="text-xs text-slate-500">{car.location}</p>}
 
         <div className="flex items-center justify-between pt-1">
-          <p className="font-bold text-gray-900">{car.price?.toLocaleString("no")} kr</p>
+          <p className="font-bold text-slate-100">{car.price?.toLocaleString("no")} kr</p>
           {discountPct !== null && (
             <div className="flex items-center gap-1.5">
-              <div className="w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
                 <div className="h-full bg-green-500 rounded-full" style={{ width: `${barW}%` }} />
               </div>
-              <span className="text-xs font-semibold text-green-700">-{discountPct}%</span>
+              <span className="text-xs font-semibold text-green-400">-{discountPct}%</span>
             </div>
           )}
         </div>
@@ -151,71 +151,71 @@ export default function Listings() {
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Søk</label>
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Søk</label>
         <input placeholder="Navn eller modell…" value={filters.title ?? ""}
           onChange={(e) => setFilters((f) => ({ ...f, title: e.target.value }))}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Merke & Modell</label>
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Merke & Modell</label>
         <select value={filters.brand ?? ""} onChange={(e) => setFilters((f) => ({ ...f, brand: e.target.value }))}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
           <option value="">Alle merker</option>
           {brands.map((b) => <option key={b}>{b}</option>)}
         </select>
         <select value={filters.model ?? ""} onChange={(e) => setFilters((f) => ({ ...f, model: e.target.value }))}
           disabled={!filters.brand}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-40">
+          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-40">
           <option value="">Alle modeller</option>
           {models.map((m) => <option key={m}>{m}</option>)}
         </select>
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Årsmodell</label>
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Årsmodell</label>
         <div className="grid grid-cols-2 gap-2">
           <input placeholder="Fra" type="number" value={filters.year_min ?? ""}
             onChange={(e) => setFilters((f) => ({ ...f, year_min: e.target.value }))}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
           <input placeholder="Til" type="number" value={filters.year_max ?? ""}
             onChange={(e) => setFilters((f) => ({ ...f, year_max: e.target.value }))}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
         </div>
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pris (kr)</label>
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Pris (kr)</label>
         <div className="grid grid-cols-2 gap-2">
           <input placeholder="Fra" type="number" value={filters.price_min ?? ""}
             onChange={(e) => setFilters((f) => ({ ...f, price_min: e.target.value }))}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
           <input placeholder="Til" type="number" value={filters.price_max ?? ""}
             onChange={(e) => setFilters((f) => ({ ...f, price_max: e.target.value }))}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            className="border border-slate-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
         </div>
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Maks km</label>
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Maks km</label>
         <input placeholder="f.eks. 100000" type="number" value={filters.mileage_max ?? ""}
           onChange={(e) => setFilters((f) => ({ ...f, mileage_max: e.target.value }))}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Drivstoff</label>
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Drivstoff</label>
         <select value={filters.fuel_type ?? ""} onChange={(e) => setFilters((f) => ({ ...f, fuel_type: e.target.value }))}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
           <option value="">Alle</option>
           {FUEL_TYPES.map((ft) => <option key={ft}>{ft}</option>)}
         </select>
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Annonnsetype</label>
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Annonnsetype</label>
         <select value={filters.listing_type ?? ""} onChange={(e) => setFilters((f) => ({ ...f, listing_type: e.target.value }))}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
           <option value="">Alle</option>
           <option value="buy_now">Kjøp nå</option>
           <option value="auction">Auksjon</option>
@@ -229,7 +229,7 @@ export default function Listings() {
 
       {hasActiveFilters && (
         <button onClick={() => navigate("/alerts", { state: { prefill: applied } })}
-          className="w-full flex items-center justify-center gap-2 border border-blue-300 text-blue-700 rounded-lg px-4 py-2 text-sm font-medium hover:bg-blue-50 transition-colors">
+          className="w-full flex items-center justify-center gap-2 border border-blue-300 text-amber-400 rounded-lg px-4 py-2 text-sm font-medium hover:bg-blue-50 transition-colors">
           <Bell size={14} /> Abonner på søket
         </button>
       )}
@@ -248,7 +248,7 @@ export default function Listings() {
     <div className="flex gap-6">
       {/* Desktop filter sidebar */}
       <aside className="hidden lg:block w-[260px] shrink-0">
-        <div className="bg-white rounded-xl border border-gray-200 p-4 sticky top-4">
+        <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 sticky top-4">
           <FilterPanel />
         </div>
       </aside>
@@ -259,7 +259,7 @@ export default function Listings() {
         <div className="flex items-center gap-3 flex-wrap">
           {/* Mobile filter toggle */}
           <button onClick={() => setFiltersOpen((v) => !v)}
-            className="lg:hidden flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            className="lg:hidden flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700/50">
             <SlidersHorizontal size={15} />
             Filtre {activeCount > 0 && <span className="bg-blue-600 text-white text-xs px-1.5 py-0.5 rounded-full">{activeCount}</span>}
           </button>
@@ -271,26 +271,26 @@ export default function Listings() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                   sort === o.key
                     ? "bg-blue-600 text-white border-blue-600"
-                    : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                    : "bg-white border-slate-700 text-slate-400 hover:bg-slate-700/50"
                 }`}>
                 {o.label}
               </button>
             ))}
           </div>
 
-          <span className="text-xs text-gray-400 ml-auto">
+          <span className="text-xs text-slate-500 ml-auto">
             {rawCars.length} annonser
           </span>
         </div>
 
         {/* Mobile filter panel */}
         {filtersOpen && (
-          <div className="lg:hidden bg-white rounded-xl border border-gray-200 p-4">
+          <div className="lg:hidden bg-slate-800 rounded-xl border border-slate-700 p-4">
             <FilterPanel />
           </div>
         )}
 
-        {isLoading && <p className="text-gray-500">Laster…</p>}
+        {isLoading && <p className="text-slate-400">Laster…</p>}
 
         {/* Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -298,9 +298,9 @@ export default function Listings() {
         </div>
 
         <div ref={loaderRef} className="h-8 flex items-center justify-center">
-          {isFetchingNextPage && <span className="text-sm text-gray-400">Laster mer…</span>}
+          {isFetchingNextPage && <span className="text-sm text-slate-500">Laster mer…</span>}
           {!hasNextPage && cars.length > 0 && (
-            <span className="text-xs text-gray-400">Ingen flere resultater</span>
+            <span className="text-xs text-slate-500">Ingen flere resultater</span>
           )}
         </div>
       </div>

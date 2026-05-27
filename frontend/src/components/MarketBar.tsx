@@ -19,12 +19,12 @@ export default function MarketBar() {
   ];
 
   return (
-    <div className="bg-gray-900 text-white text-xs px-4 py-2 flex items-center gap-0 overflow-x-auto shrink-0">
+    <div className="bg-slate-950 text-xs px-4 py-2.5 flex items-center gap-0 overflow-x-auto shrink-0 border-b border-slate-800">
       {items.map((item, i) => (
         <span key={item.label} className="flex items-center gap-2 whitespace-nowrap">
-          {i > 0 && <span className="text-gray-600 mx-3">|</span>}
-          <span className="text-gray-400">{item.label}</span>
-          <span className="font-semibold text-white ml-1">{item.value}</span>
+          {i > 0 && <span className="text-slate-700 mx-3">|</span>}
+          <span className="text-slate-500 uppercase tracking-wide">{item.label}</span>
+          <span className={`font-semibold ml-1 ${item.label === "Beste deal" ? "text-green-400" : "text-amber-400"}`}>{item.value}</span>
         </span>
       ))}
     </div>
