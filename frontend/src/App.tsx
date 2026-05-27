@@ -3,11 +3,13 @@ import Dashboard from "./pages/Dashboard";
 import Listings from "./pages/Listings";
 import Outliers from "./pages/Outliers";
 import Alerts from "./pages/Alerts";
+import Analytics from "./pages/Analytics";
 
 const nav = [
   { to: "/", label: "Dashboard" },
   { to: "/listings", label: "Listings" },
   { to: "/outliers", label: "Deals" },
+  { to: "/analytics", label: "Analytics" },
   { to: "/alerts", label: "Alerts" },
 ];
 
@@ -34,6 +36,7 @@ export default function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/listings" element={<Listings />} />
           <Route path="/outliers" element={<Outliers />} />
+          <Route path="/analytics" element={<Analytics />} />
           <Route path="/alerts" element={<Alerts />} />
         </Routes>
       </main>

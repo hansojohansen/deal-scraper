@@ -6,10 +6,23 @@ import { api, type Car, type CarFilters } from "../api/client";
 const FUEL_TYPES = ["Bensin", "Diesel", "El", "Hybrid bensin", "Ladbar hybrid"];
 const empty: CarFilters = {};
 
+function euBadge(deadline: string | null): { label: string; cls: string } | null {
+  if (!deadline) return null;
+  const d = new Date(deadline);
+  const now = new Date();
+  const msPerYear = 365.25 * 24 * 3600 * 1000;
+  if (d < now) return { label: "EU utløpt", cls: "bg-red-100 text-red-700" };
+  if (d.getTime() - now.getTime() < msPerYear)
+    return { label: "EU snart", cls: "bg-orange-100 text-orange-700" };
+  return { label: "EU ok", cls: "bg-green-100 text-green-700" };
+}
+
 function CarCard({ car }: { car: Car }) {
   const pct = car.outlier_score
     ? Math.round(Math.abs((car.price ?? 0) / car.outlier_score.peer_avg_price - 1) * 100)
     : null;
+  const eu = euBadge(car.eu_next_deadline);
+
   return (
     <a
       href={car.url}
@@ -18,8 +31,25 @@ function CarCard({ car }: { car: Car }) {
       className="block bg-white rounded-xl border border-gray-200 p-4 hover:border-blue-400 transition-colors"
     >
       <div className="flex justify-between items-start gap-2">
-        <div className="min-w-0">
-          <p className="font-semibold text-gray-900 truncate">{car.title}</p>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+            <p className="font-semibold text-gray-900 truncate">{car.title}</p>
+            {car.listing_type === "auction" && (
+              <span className="shrink-0 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium">
+                AUKSJON
+              </span>
+            )}
+            {car.is_norwegian_reg === false && (
+              <span className="shrink-0 text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-medium">
+                IMPORTERT
+              </span>
+            )}
+            {eu && (
+              <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded-full font-medium ${eu.cls}`}>
+                {eu.label}
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-500">
             {car.year} · {car.mileage?.toLocaleString("no")} km · {car.fuel_type}
           </p>
@@ -42,6 +72,7 @@ export default function Listings() {
   const navigate = useNavigate();
   const [filters, setFilters] = useState<CarFilters>(empty);
   const [applied, setApplied] = useState<CarFilters>(empty);
+  const [auctionsFirst, setAuctionsFirst] = useState(false);
   const loaderRef = useRef<HTMLDivElement>(null);
 
   const { data: brandsData } = useQuery({
@@ -57,7 +88,6 @@ export default function Listings() {
   });
   const models = modelsData ?? [];
 
-  // Reset model when brand changes
   useEffect(() => {
     setFilters((f) => ({ ...f, model: "" }));
   }, [filters.brand]);
@@ -82,7 +112,14 @@ export default function Listings() {
     return () => obs.disconnect();
   }, [hasNextPage, fetchNextPage]);
 
-  const cars = data?.pages.flatMap((p) => p.items) ?? [];
+  let cars = data?.pages.flatMap((p) => p.items) ?? [];
+  if (auctionsFirst) {
+    cars = [
+      ...cars.filter((c) => c.listing_type === "auction"),
+      ...cars.filter((c) => c.listing_type !== "auction"),
+    ];
+  }
+
   const hasActiveFilters = Object.values(applied).some((v) => v !== "" && v != null);
 
   function handleSearch() {
@@ -92,6 +129,7 @@ export default function Listings() {
   function handleClear() {
     setFilters(empty);
     setApplied(empty);
+    setAuctionsFirst(false);
   }
 
   function handleSubscribe() {
@@ -103,7 +141,7 @@ export default function Listings() {
       <h1 className="text-xl font-semibold text-gray-900">Listings</h1>
 
       <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-        {/* Row 1: title search full width */}
+        {/* Row 1: title search */}
         <input
           placeholder="Search by name or model…"
           value={filters.title ?? ""}
@@ -111,7 +149,7 @@ export default function Listings() {
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
-        {/* Row 2: brand + model dropdowns */}
+        {/* Row 2: brand + model */}
         <div className="grid grid-cols-2 gap-3">
           <select
             value={filters.brand ?? ""}
@@ -132,7 +170,7 @@ export default function Listings() {
           </select>
         </div>
 
-        {/* Row 3: year, price, mileage, fuel */}
+        {/* Row 3: year, price, mileage, fuel, listing type */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <input
             placeholder="Year from"
@@ -177,21 +215,42 @@ export default function Listings() {
             <option value="">All fuel types</option>
             {FUEL_TYPES.map((ft) => <option key={ft}>{ft}</option>)}
           </select>
+          <select
+            value={filters.listing_type ?? ""}
+            onChange={(e) => setFilters((f) => ({ ...f, listing_type: e.target.value }))}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All listing types</option>
+            <option value="buy_now">Buy now</option>
+            <option value="auction">Auction</option>
+          </select>
           <button
             onClick={handleSearch}
-            className="col-span-2 sm:col-span-1 bg-blue-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-blue-700"
+            className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-blue-700"
           >
             Search
           </button>
+        </div>
+
+        {/* Sort + clear row */}
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={auctionsFirst}
+              onChange={(e) => setAuctionsFirst(e.target.checked)}
+              className="rounded"
+            />
+            Show auctions first
+          </label>
           <button
             onClick={handleClear}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm hover:bg-gray-50"
+            className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm hover:bg-gray-50"
           >
             Clear
           </button>
         </div>
 
-        {/* Subscribe button — only when filters are active */}
         {hasActiveFilters && (
           <button
             onClick={handleSubscribe}

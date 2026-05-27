@@ -28,6 +28,7 @@ async def list_cars(
     price_max: int | None = None,
     mileage_max: int | None = None,
     fuel_type: str | None = None,
+    listing_type: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     q = select(Car).options(selectinload(Car.outlier_score)).where(Car.status == "active")
@@ -51,6 +52,8 @@ async def list_cars(
         q = q.where(Car.mileage <= mileage_max)
     if fuel_type:
         q = q.where(Car.fuel_type.ilike(f"%{fuel_type}%"))
+    if listing_type:
+        q = q.where(Car.listing_type == listing_type)
     q = q.order_by(Car.id).limit(pagination.limit + 1)
     result = await db.execute(q)
     cars = list(result.scalars())

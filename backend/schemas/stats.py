@@ -22,3 +22,10 @@ class BrandStatsResponse(BaseModel):
     brand: str
     count: int
     avg_price: int
+
+class ModelStatsResponse(BaseModel):
+    model: str
+    count: int
+    avg_price: int
+    min_price: int
+    max_price: int

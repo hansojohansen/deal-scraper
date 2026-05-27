@@ -1,9 +1,10 @@
-﻿from datetime import datetime
+﻿from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     Float,
     ForeignKey,
     Integer,
@@ -39,6 +40,10 @@ class Car(Base):
     location: Mapped[str | None] = mapped_column(Text)
     features: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, server_default="{}")
     status: Mapped[str] = mapped_column(Text, default="active", server_default="active")
+    eu_inspected_at: Mapped[date | None] = mapped_column(Date)
+    eu_next_deadline: Mapped[date | None] = mapped_column(Date)
+    is_norwegian_reg: Mapped[bool | None] = mapped_column(Boolean)
+    listing_type: Mapped[str | None] = mapped_column(Text)
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -129,4 +134,3 @@ class AlertMatch(Base):
     )
 
     alert: Mapped["DealAlert"] = relationship(back_populates="matches")
-

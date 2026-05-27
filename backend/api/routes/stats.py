@@ -9,6 +9,7 @@ from backend.dependencies import get_db
 from backend.schemas.stats import (
     BrandStatsResponse,
     KmBucket,
+    ModelStatsResponse,
     PriceTrendPoint,
     StatsSummaryResponse,
 )
@@ -68,3 +69,33 @@ async def brands_stats(db: AsyncSession = Depends(get_db)):
     )
     return [BrandStatsResponse(brand=row[0], count=row[1], avg_price=int(row[2] or 0)) for row in r]
 
+@router.get("/models", response_model=list[ModelStatsResponse])
+async def models_stats(brand: str, db: AsyncSession = Depends(get_db)):
+    r = await db.execute(
+        select(
+            Car.model,
+            func.count(Car.id),
+            func.avg(Car.price),
+            func.min(Car.price),
+            func.max(Car.price),
+        )
+        .where(
+            Car.status == "active",
+            Car.brand.ilike(brand),
+            Car.model.is_not(None),
+            Car.price.is_not(None),
+        )
+        .group_by(Car.model)
+        .order_by(func.count(Car.id).desc())
+        .limit(50)
+    )
+    return [
+        ModelStatsResponse(
+            model=row[0],
+            count=row[1],
+            avg_price=int(row[2] or 0),
+            min_price=int(row[3] or 0),
+            max_price=int(row[4] or 0),
+        )
+        for row in r
+    ]

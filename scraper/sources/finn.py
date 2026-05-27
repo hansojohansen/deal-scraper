@@ -1,5 +1,6 @@
-import re
+﻿import re
 import time
+from datetime import date
 
 import requests
 import yaml
@@ -19,7 +20,7 @@ def _parse_metadata(line: str) -> dict:
 
     parts = [p.strip() for p in line.split("∙")]
     for i, part in enumerate(parts):
-        part_clean = part.replace("\xa0", "").replace(" ", "").strip()
+        part_clean = part.replace("\xa0", "").replace(" ", "").strip()
 
         if i == 0 and re.match(r"^\d{4}$", part_clean):
             result["year"] = int(part_clean)
@@ -65,6 +66,17 @@ def _parse_brand_model(title: str) -> tuple[str | None, str | None]:
     return brand, model
 
 
+def _parse_norwegian_date(s: str) -> date | None:
+    """Parse 'dd.mm.yyyy' Norwegian date string."""
+    m = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", s.strip())
+    if m:
+        try:
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        except ValueError:
+            return None
+    return None
+
+
 def _normalise(article) -> dict | None:
     """Extract canonical fields from a BeautifulSoup article element."""
     link = article.find("a", class_="sf-search-ad-link")
@@ -105,7 +117,6 @@ def _normalise(article) -> dict | None:
     location = None
     for t in texts:
         if "∙" in t and not re.search(r"\d{4}", t) and "km" not in t and "kr" not in t:
-            # Location line: "Sandnessjøen" or "Ridabu ∙ AUTO BRAVIA AS"
             location = t.split("∙")[0].strip()
             break
 
@@ -122,6 +133,7 @@ def _normalise(article) -> dict | None:
         "transmission": meta["transmission"],
         "price": price,
         "location": location,
+        "listing_type": "buy_now",
         "features": {},
     }
 
@@ -144,6 +156,50 @@ def fetch_page(page: int, session: requests.Session, config: dict) -> list[dict]
             results.append(item)
 
     return results
+
+
+def fetch_detail(url: str, session: requests.Session, delay: float = 1.2) -> dict:
+    """
+    Fetch a finn.no listing detail page and extract EU inspection dates
+    and Norwegian registration status from the tech specs table.
+    Returns a partial dict with only the fields that were found.
+    """
+    time.sleep(delay)
+    result: dict = {}
+    try:
+        resp = session.get(url, timeout=15)
+        resp.raise_for_status()
+    except requests.RequestException:
+        return result
+
+    soup = BeautifulSoup(resp.text, "lxml")
+
+    # finn.no detail pages use <dt>/<dd> pairs in a definition list for car specs
+    dt_elements = soup.find_all("dt")
+    for dt in dt_elements:
+        label = dt.get_text(strip=True).lower()
+        dd = dt.find_next_sibling("dd")
+        if not dd:
+            continue
+        value = dd.get_text(strip=True)
+
+        if "sist eu-godkjent" in label or "eu-godkjent" in label:
+            parsed = _parse_norwegian_date(value)
+            if parsed:
+                result["eu_inspected_at"] = parsed
+
+        elif "neste frist for eu-kontroll" in label or "eu-kontroll" in label:
+            parsed = _parse_norwegian_date(value)
+            if parsed:
+                result["eu_next_deadline"] = parsed
+
+        elif "registrert i norge" in label:
+            result["is_norwegian_reg"] = value.lower() not in ("nei", "no", "false")
+
+        elif "ikke norsk bil" in label or "importert" in label:
+            result["is_norwegian_reg"] = False
+
+    return result
 
 
 def get_total_pages(session: requests.Session, config: dict) -> int:

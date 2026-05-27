@@ -23,6 +23,10 @@ export interface Car {
   price: number | null;
   location: string | null;
   status: string;
+  eu_inspected_at: string | null;
+  eu_next_deadline: string | null;
+  is_norwegian_reg: boolean | null;
+  listing_type: string | null;
   first_seen_at: string;
   outlier_score: OutlierScore | null;
 }
@@ -67,6 +71,14 @@ export interface BrandStat {
   avg_price: number;
 }
 
+export interface ModelStats {
+  model: string;
+  count: number;
+  avg_price: number;
+  min_price: number;
+  max_price: number;
+}
+
 export interface Alert {
   id: number;
   notify_email: string;
@@ -104,6 +116,7 @@ export interface CarFilters {
   price_max?: string;
   mileage_max?: string;
   fuel_type?: string;
+  listing_type?: string;
 }
 
 export const api = {
@@ -116,6 +129,8 @@ export const api = {
     request<string[]>(`/api/v1/cars/brands/${encodeURIComponent(brand)}/models`),
   getStatsSummary: () => request<StatsSummary>("/api/v1/stats/summary"),
   getBrands: () => request<BrandStat[]>("/api/v1/stats/brands"),
+  getModelStats: (brand: string) =>
+    request<ModelStats[]>(`/api/v1/stats/models?brand=${encodeURIComponent(brand)}`),
   getOutliers: (limit = 50) => request<Outlier[]>(`/api/v1/outliers?limit=${limit}`),
   getAlerts: () => request<Alert[]>("/api/v1/alerts"),
   createAlert: (body: AlertCreate) =>

@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+﻿from datetime import date, datetime
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict
@@ -31,6 +31,10 @@ class CarSummaryResponse(BaseModel):
     price: int | None
     location: str | None
     status: str
+    eu_inspected_at: date | None = None
+    eu_next_deadline: date | None = None
+    is_norwegian_reg: bool | None = None
+    listing_type: str | None = None
     first_seen_at: datetime
     last_seen_at: datetime | None
     outlier_score: OutlierSummary | None = None
