@@ -56,3 +56,10 @@ npm-debug.log*
 
 # Jupyter
 .ipynb_checkpoints/
+
+frontend/node_modules/
+frontend_dev.log
+frontend_dev_err.log
+uvicorn.log
+uvicorn_err.log
+uvicorn.err
