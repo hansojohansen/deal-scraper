@@ -1,5 +1,5 @@
-"""
-Scraper orchestrator: COLLECT → FILTER → STORE
+﻿"""
+Scraper orchestrator: COLLECT â†’ FILTER â†’ STORE
 ECC pattern: iterative retrieval with cursor state persistence.
 """
 
@@ -41,7 +41,7 @@ def _load_config() -> dict:
 async def run(dry_run: bool = False, max_pages: int = 10) -> dict:
     """
     Main scrape cycle. Returns summary dict.
-    Steps: fetch pages → filter → dedup → upsert DB → save cursor
+    Steps: fetch pages â†’ filter â†’ dedup â†’ upsert DB â†’ save cursor
     """
     config = _load_config()
     finn_config = config["scraper"]["finn"]
@@ -66,7 +66,7 @@ async def run(dry_run: bool = False, max_pages: int = 10) -> dict:
 
     all_items: list[dict] = []
 
-    print(f"[scraper] Starting finn.no scrape — max_pages={max_pages}, dry_run={dry_run}")
+    print(f"[scraper] Starting finn.no scrape â€” max_pages={max_pages}, dry_run={dry_run}")
 
     for page in range(1, max_pages + 1):
         try:
@@ -77,7 +77,7 @@ async def run(dry_run: bool = False, max_pages: int = 10) -> dict:
             if page == 1 and items and last_known_url:
                 first_url = items[0]["url"] if items else None
                 if first_url == last_known_url:
-                    print(f"[scraper] Cursor match on page 1 — no new listings since last run")
+                    print(f"[scraper] Cursor match on page 1 â€” no new listings since last run")
                     break
 
             # Apply pre-filter
@@ -91,7 +91,7 @@ async def run(dry_run: bool = False, max_pages: int = 10) -> dict:
             print(f"[scraper] Page {page}: {len(items)} listings ({len(all_items)} kept so far)")
 
             if not items:
-                print(f"[scraper] Empty page {page} — stopping")
+                print(f"[scraper] Empty page {page} â€” stopping")
                 break
 
         except Exception as e:
@@ -103,7 +103,7 @@ async def run(dry_run: bool = False, max_pages: int = 10) -> dict:
     print(f"[scraper] Fetched {summary['scraped']} listings, {len(all_items)} after filter")
 
     if dry_run:
-        print(f"[scraper] DRY RUN — sample output:")
+        print(f"[scraper] DRY RUN â€” sample output:")
         for item in all_items[:5]:
             print(f"  {item['brand']} {item['model']} {item['year']} | {item['price']:,} NOK | {item['mileage']} km | {item['url']}")
         summary["dry_run_sample"] = all_items[:5]
@@ -130,6 +130,13 @@ async def run(dry_run: bool = False, max_pages: int = 10) -> dict:
         await db.commit()
 
     print(f"[scraper] Stored: {summary['new']} new, {summary['updated']} updated")
+
+    # Phase 3: outlier detection
+    from engine.outlier import run_detection
+    async with session_factory() as db:
+        detection = await run_detection(db)
+    summary["detection"] = detection
+    print(f"[scraper] Detection: {detection['upserted']} outliers flagged, {detection['removed']} removed")
 
     # Save cursor state
     first_url = all_items[0]["url"] if all_items else last_known_url
@@ -177,3 +184,4 @@ if __name__ == "__main__":
         for e in result["errors"]:
             print(f"  ERROR: {e}")
         sys.exit(1)
+
