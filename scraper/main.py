@@ -138,6 +138,12 @@ async def run(dry_run: bool = False, max_pages: int = 10) -> dict:
     summary["detection"] = detection
     print(f"[scraper] Detection: {detection['upserted']} outliers flagged, {detection['removed']} removed")
 
+    # Phase 4: alert dispatch
+    from agents.alert_agent import run as dispatch_alerts
+    dispatch_result = await dispatch_alerts()
+    summary["alerts_sent"] = dispatch_result["notifications_sent"]
+    print(f"[scraper] Alerts: {dispatch_result['notifications_sent']} notifications sent")
+
     # Save cursor state
     first_url = all_items[0]["url"] if all_items else last_known_url
     _save_cursor({
@@ -184,4 +190,5 @@ if __name__ == "__main__":
         for e in result["errors"]:
             print(f"  ERROR: {e}")
         sys.exit(1)
+
 
