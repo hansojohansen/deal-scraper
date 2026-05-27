@@ -1,0 +1,35 @@
+scraper:
+  finn:
+    base_url: "https://www.finn.no/mobility/browse/car"
+    api_url: "https://www.finn.no/api/search-qf"
+    delay_seconds: 1.2
+    user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    # Update these selectors when finn.no changes their HTML (no code change needed)
+    selectors:
+      result_list: "article[data-testid='result-item'], div[data-testid='search-result']"
+      title: "[data-testid='heading'], h2.sf-search-ad-link"
+      price: "[data-testid='price'], .u-t3"
+      mileage: "[data-testid='km'], .u-caption"
+      year: "[data-testid='year']"
+      location: "[data-testid='location']"
+      next_page: "[data-testid='pagination-next'], a[rel='next']"
+
+outlier:
+  min_peer_group_size: 5
+  z_score_threshold: -1.5      # flag if z-score below this
+  z_score_remove_threshold: -0.5  # remove flag if score rises above this
+  iqr_multiplier: 1.5
+  year_range: 2                # ±2 years for peer group
+  mileage_range: 30000         # ±30k km for peer group
+
+ai:
+  batch_size: 5
+  daily_quota: 500             # Gemini Flash free tier RPD
+  models:
+    - gemini-2.0-flash-lite
+    - gemini-2.0-flash
+    - gemini-2.5-flash
+    - gemini-flash-lite-latest
+
+notifications:
+  alert_cooldown_hours: 24     # don't re-notify on same car within this window

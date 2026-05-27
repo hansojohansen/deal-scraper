@@ -38,11 +38,17 @@ desktop.ini
 *.log
 logs/
 
+# Scraper runtime state (cursor position, not source code)
+scraper/state/cursor.json
+.claude/scraper_state.json
+.claude/compact_checkpoint.md
+
 # Data / output files
 *.csv
-*.json
-data/
 output/
+
+# data/ contains feedback.json which IS committed
+# data/*.json is committed intentionally
 
 # Node (if applicable)
 node_modules/
