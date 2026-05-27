@@ -1,11 +1,17 @@
-﻿from fastapi import APIRouter, Depends, Query
+﻿from fastapi import APIRouter, Depends
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.dependencies import get_db, CursorPagination
+from sqlalchemy.orm import selectinload
+
 from backend.db.models import Car, PriceHistory
+from backend.dependencies import CursorPagination, get_db
 from backend.exceptions import ApiError
-from backend.schemas.car import CarSummaryResponse, CarDetailResponse, CursorPage, PricePointResponse
+from backend.schemas.car import (
+    CarDetailResponse,
+    CarSummaryResponse,
+    CursorPage,
+    PricePointResponse,
+)
 
 router = APIRouter(prefix="/api/v1/cars", tags=["cars"])
 

@@ -1,9 +1,10 @@
 ﻿from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.dependencies import get_db, CursorPagination
+
 from backend.db.crud import alerts as alert_crud
+from backend.dependencies import CursorPagination, get_db
 from backend.exceptions import ApiError
-from backend.schemas.alert import AlertCreate, AlertUpdate, AlertResponse
+from backend.schemas.alert import AlertCreate, AlertResponse, AlertUpdate
 
 router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
 

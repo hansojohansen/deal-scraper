@@ -7,11 +7,13 @@ Usage:
 """
 import argparse
 import asyncio
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from backend.db.session import session_factory
-from backend.db.models import Car, OutlierScore
+
 from backend.db.crud import alerts as alert_crud
+from backend.db.models import Car
+from backend.db.session import session_factory
 from notifications.email import send_alert
 from notifications.push_stub import send_push
 
@@ -31,7 +33,7 @@ async def dispatch_for_car(db, car: Car) -> int:
     }
 
     for alert in matching:
-        ok = await send_alert(alert.notify_email, car_data, outlier_pct)
+        await send_alert(alert.notify_email, car_data, outlier_pct)
         if alert.notify_push and alert.push_token:
             await send_push(
                 alert.push_token,
@@ -74,3 +76,4 @@ if __name__ == "__main__":
     parser.add_argument("--car-id", type=int, default=None)
     args = parser.parse_args()
     asyncio.run(run(car_id=args.car_id))
+

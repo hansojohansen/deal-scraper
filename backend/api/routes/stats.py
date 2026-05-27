@@ -1,10 +1,17 @@
-﻿from fastapi import APIRouter, Depends
-from sqlalchemy import select, func, text
+﻿from datetime import UTC, datetime
+
+from fastapi import APIRouter, Depends
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.db.models import Car
 from backend.dependencies import get_db
-from backend.db.models import Car, PriceHistory
-from backend.schemas.stats import StatsSummaryResponse, BrandStatsResponse, KmBucket, PriceTrendPoint
-from datetime import datetime, timedelta, timezone
+from backend.schemas.stats import (
+    BrandStatsResponse,
+    KmBucket,
+    PriceTrendPoint,
+    StatsSummaryResponse,
+)
 
 router = APIRouter(prefix="/api/v1/stats", tags=["stats"])
 
@@ -12,10 +19,10 @@ router = APIRouter(prefix="/api/v1/stats", tags=["stats"])
 async def stats_summary(db: AsyncSession = Depends(get_db)):
     r = await db.execute(
         select(func.count(Car.id), func.avg(Car.price), func.percentile_cont(0.5).within_group(Car.price))
-        .where(Car.status == "active", Car.price != None)
+        .where(Car.status == "active", Car.price.is_not(None))
     )
     total, avg_price, median_price = r.one()
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     r2 = await db.execute(
         select(func.count(Car.id)).where(func.date(Car.first_seen_at) == today)
     )
@@ -56,7 +63,8 @@ async def stats_summary(db: AsyncSession = Depends(get_db)):
 async def brands_stats(db: AsyncSession = Depends(get_db)):
     r = await db.execute(
         select(Car.brand, func.count(Car.id), func.avg(Car.price))
-        .where(Car.status == "active", Car.brand != None)
+        .where(Car.status == "active", Car.brand.is_not(None))
         .group_by(Car.brand).order_by(func.count(Car.id).desc()).limit(30)
     )
     return [BrandStatsResponse(brand=row[0], count=row[1], avg_price=int(row[2] or 0)) for row in r]
+

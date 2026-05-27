@@ -1,7 +1,6 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import Car, PriceHistory
@@ -27,7 +26,7 @@ async def upsert_car(db: AsyncSession, item: dict) -> tuple[Car, bool]:
     """
     existing = await get_by_url(db, item["url"])
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     price = item.get("price")
 
     if existing is None:

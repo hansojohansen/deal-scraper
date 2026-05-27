@@ -1,10 +1,13 @@
 ﻿from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from backend.api.routes import alerts, cars, health, outliers, stats
 from backend.config import settings
-from backend.exceptions import ApiError, api_error_handler, generic_error_handler
-from backend.api.routes import health, cars, stats, outliers, alerts
 from backend.db.session import engine
+from backend.exceptions import ApiError, api_error_handler, generic_error_handler
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

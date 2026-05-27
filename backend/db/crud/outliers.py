@@ -1,6 +1,8 @@
-﻿from sqlalchemy import select, delete
+﻿from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.models import OutlierScore, Car
+
+from backend.db.models import Car, OutlierScore
+
 
 async def get_all(db: AsyncSession, limit: int = 50) -> list[tuple]:
     result = await db.execute(

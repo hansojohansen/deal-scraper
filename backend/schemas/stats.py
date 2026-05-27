@@ -1,5 +1,6 @@
 ﻿from pydantic import BaseModel
 
+
 class KmBucket(BaseModel):
     label: str
     avg_price: int

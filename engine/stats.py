@@ -4,9 +4,8 @@ The API routes query the DB directly for live data; these helpers work on
 in-memory Car/PriceHistory lists for unit testing and batch reporting.
 """
 import statistics
-from datetime import datetime, timedelta, timezone
 from collections import defaultdict
-
+from datetime import UTC, datetime, timedelta
 
 _KM_BUCKETS = [
     ("0-30k",     0,      30_000),
@@ -35,12 +34,12 @@ def price_by_km_buckets(cars) -> list[dict]:
 
 
 def price_trend_30d(price_history_rows) -> list[dict]:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    cutoff = datetime.now(UTC) - timedelta(days=30)
     daily: dict[str, list[int]] = defaultdict(list)
     for row in price_history_rows:
         ts = row.recorded_at
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
+            ts = ts.replace(tzinfo=UTC)
         if ts >= cutoff:
             daily[ts.date().isoformat()].append(row.price)
     return [

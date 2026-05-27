@@ -7,14 +7,13 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
 
 from scraper.filters import is_relevant
 from scraper.sources import finn
-
 
 CURSOR_FILE = Path("scraper/state/cursor.json")
 FEEDBACK_FILE = Path("data/feedback.json")
@@ -53,7 +52,7 @@ async def run(dry_run: bool = False, max_pages: int = 10) -> dict:
     last_known_url = finn_cursor.get("last_first_url")
 
     summary = {
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(UTC).isoformat(),
         "source": "finn.no",
         "pages_fetched": 0,
         "scraped": 0,
@@ -77,7 +76,7 @@ async def run(dry_run: bool = False, max_pages: int = 10) -> dict:
             if page == 1 and items and last_known_url:
                 first_url = items[0]["url"] if items else None
                 if first_url == last_known_url:
-                    print(f"[scraper] Cursor match on page 1 â€” no new listings since last run")
+                    print("[scraper] Cursor match on page 1 â€” no new listings since last run")
                     break
 
             # Apply pre-filter
@@ -103,15 +102,15 @@ async def run(dry_run: bool = False, max_pages: int = 10) -> dict:
     print(f"[scraper] Fetched {summary['scraped']} listings, {len(all_items)} after filter")
 
     if dry_run:
-        print(f"[scraper] DRY RUN â€” sample output:")
+        print("[scraper] DRY RUN â€” sample output:")
         for item in all_items[:5]:
             print(f"  {item['brand']} {item['model']} {item['year']} | {item['price']:,} NOK | {item['mileage']} km | {item['url']}")
         summary["dry_run_sample"] = all_items[:5]
         return summary
 
     # --- Database upsert ---
-    from backend.db.session import session_factory
     from backend.db.crud import cars as cars_crud
+    from backend.db.session import session_factory
 
     async with session_factory() as db:
         seen_urls: set[str] = set()
@@ -149,7 +148,7 @@ async def run(dry_run: bool = False, max_pages: int = 10) -> dict:
     _save_cursor({
         "finn": {
             "last_first_url": first_url,
-            "last_run_at": datetime.now(timezone.utc).isoformat(),
+            "last_run_at": datetime.now(UTC).isoformat(),
             "last_new_count": summary["new"],
         }
     })

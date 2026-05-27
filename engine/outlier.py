@@ -7,11 +7,13 @@ Flags cars where z < z_score_threshold and peer_size >= min_peer_group_size.
 Removes stale rows where z >= z_score_remove_threshold.
 """
 import statistics
-from sqlalchemy import select, delete
-from sqlalchemy.ext.asyncio import AsyncSession
-from backend.db.models import Car, OutlierScore
-import yaml
 from pathlib import Path
+
+import yaml
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.db.models import Car, OutlierScore
 
 _cfg = yaml.safe_load(Path("config.yaml").read_text())["outlier"]
 Z_THRESHOLD: float = _cfg["z_score_threshold"]
@@ -71,7 +73,7 @@ def _reason(car: Car, peer_prices: list[int]) -> str:
 
 async def run_detection(db: AsyncSession) -> dict:
     result = await db.execute(
-        select(Car).where(Car.status == "active", Car.price != None)
+        select(Car).where(Car.status == "active", Car.price.is_not(None))
     )
     all_cars: list[Car] = list(result.scalars())
 
@@ -109,3 +111,4 @@ async def run_detection(db: AsyncSession) -> dict:
 
     await db.commit()
     return {"cars_checked": len(all_cars), "upserted": upserted, "removed": removed}
+

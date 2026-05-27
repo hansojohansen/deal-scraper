@@ -1,7 +1,8 @@
 ﻿from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.dependencies import get_db
+
 from backend.db.crud import outliers as outlier_crud
+from backend.dependencies import get_db
 from backend.schemas.outlier import OutlierResponse
 
 router = APIRouter(prefix="/api/v1/outliers", tags=["outliers"])
