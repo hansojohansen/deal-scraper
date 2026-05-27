@@ -31,7 +31,7 @@ jobs:
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-        run: python -m scraper.main --max-pages 100
+        run: python -m scraper.main
 
       - name: Commit feedback.json
         run: |

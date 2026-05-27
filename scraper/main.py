@@ -119,7 +119,10 @@ async def run(dry_run: bool = False, max_pages: int = 10, enrich_details: bool =
 
         if source_key == "finn":
             session = finn.build_session(finn_config)
-            for page in range(1, max_pages + 1):
+            total_pages = finn.get_total_pages(session, finn_config)
+            actual_pages = min(max_pages, total_pages)
+            print(f"[scraper] finn: {total_pages} total pages available, scraping up to {actual_pages}")
+            for page in range(1, actual_pages + 1):
                 try:
                     items = finn.fetch_page(page, session, finn_config)
                     summary["pages_fetched"] += 1
