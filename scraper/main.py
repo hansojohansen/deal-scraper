@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import json
 import sys
+from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -82,7 +83,7 @@ async def _enrich_finn_details(max_cars: int = 50) -> dict:
     return {"enriched": enriched, "errors": errors}
 
 
-async def run(dry_run: bool = False, max_pages: int = 10, enrich_details: bool = False) -> dict:
+async def run(dry_run: bool = False, max_pages: int = 9999, enrich_details: bool = False) -> dict:
     """
     Main scrape cycle. Returns summary dict.
     Steps: fetch pages -> filter -> dedup -> upsert DB -> save cursor
@@ -99,6 +100,7 @@ async def run(dry_run: bool = False, max_pages: int = 10, enrich_details: bool =
         "filtered_out": 0,
         "new": 0,
         "updated": 0,
+        "removed": {},
         "errors": [],
         "dry_run": dry_run,
     }
@@ -111,6 +113,9 @@ async def run(dry_run: bool = False, max_pages: int = 10, enrich_details: bool =
     ]
 
     all_items: list[dict] = []
+    did_full_finn_scrape = False
+    finn_total_pages = 0
+    finn_actual_pages = 0
 
     for source_key, source_config, source_module in sources:
         source_cursor = cursor.get(source_key, {})
@@ -119,10 +124,11 @@ async def run(dry_run: bool = False, max_pages: int = 10, enrich_details: bool =
 
         if source_key == "finn":
             session = finn.build_session(finn_config)
-            total_pages = finn.get_total_pages(session, finn_config)
-            actual_pages = min(max_pages, total_pages)
-            print(f"[scraper] finn: {total_pages} total pages available, scraping up to {actual_pages}")
-            for page in range(1, actual_pages + 1):
+            finn_total_pages = finn.get_total_pages(session, finn_config)
+            finn_actual_pages = min(max_pages, finn_total_pages)
+            did_full_finn_scrape = finn_actual_pages >= finn_total_pages
+            print(f"[scraper] finn: {finn_total_pages} total pages, scraping {finn_actual_pages} (full={did_full_finn_scrape})")
+            for page in range(1, finn_actual_pages + 1):
                 try:
                     items = finn.fetch_page(page, session, finn_config)
                     summary["pages_fetched"] += 1
@@ -146,7 +152,6 @@ async def run(dry_run: bool = False, max_pages: int = 10, enrich_details: bool =
                     print(f"[scraper] ERROR {source_key} page {page}: {e}")
                     break
         else:
-            # nettbil and auksjonen use their own session and fetch_all
             source_session = source_module.build_session()
             try:
                 items = source_module.fetch_all(source_session, max_pages=max_pages)
@@ -192,6 +197,21 @@ async def run(dry_run: bool = False, max_pages: int = 10, enrich_details: bool =
 
     print(f"[scraper] Stored: {summary['new']} new, {summary['updated']} updated")
 
+    # --- MARK REMOVED (only on full scrapes to avoid false removals) ---
+    if did_full_finn_scrape:
+        seen_by_source: dict[str, set[str]] = defaultdict(set)
+        for item in all_items:
+            seen_by_source[item["source"]].add(item["url"])
+
+        async with session_factory() as db:
+            for source, seen_urls in seen_by_source.items():
+                count = await cars_crud.mark_unseen_as_removed(db, seen_urls, source)
+                summary["removed"][source] = count
+            await db.commit()
+
+        total_removed = sum(summary["removed"].values())
+        print(f"[scraper] Marked removed: {total_removed} listings across {len(summary['removed'])} sources")
+
     # --- ENRICH detail pages (finn only) ---
     if enrich_details:
         enrich_result = await _enrich_finn_details(max_cars=50)
@@ -210,7 +230,7 @@ async def run(dry_run: bool = False, max_pages: int = 10, enrich_details: bool =
     summary["alerts_sent"] = dispatch_result["notifications_sent"]
     print(f"[scraper] Alerts: {dispatch_result['notifications_sent']} notifications sent")
 
-    # Save cursor (finn only for now — others don't have stable ordering)
+    # Save cursor
     finn_items = [i for i in all_items if i["source"] == "finn.no"]
     first_finn_url = finn_items[0]["url"] if finn_items else cursor.get("finn", {}).get("last_first_url")
     _save_cursor({
@@ -248,8 +268,8 @@ def _update_feedback(summary: dict) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Car scraper — finn.no, nettbil, auksjonen")
     parser.add_argument("--dry-run", action="store_true", help="Fetch but don't write to DB")
-    parser.add_argument("--max-pages", type=int, default=10, help="Max pages per source (50 cars/page)")
-    parser.add_argument("--enrich-details", action="store_true", help="Fetch finn.no detail pages for EU/reg data")
+    parser.add_argument("--max-pages", type=int, default=9999, help="Max pages per source (50 cars/page). Default: all pages.")
+    parser.add_argument("--enrich-details", action="store_true", help="Fetch finn.no detail pages for EU/reg/hp data")
     args = parser.parse_args()
 
     result = asyncio.run(run(dry_run=args.dry_run, max_pages=args.max_pages, enrich_details=args.enrich_details))

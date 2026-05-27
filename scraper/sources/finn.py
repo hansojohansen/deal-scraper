@@ -12,9 +12,29 @@ def _load_config() -> dict:
         return yaml.safe_load(f)["scraper"]["finn"]
 
 
+_BODY_TYPE_MAP = {
+    "sedan": "sedan",
+    "suv": "suv",
+    "stasjonsvogn": "wagon",
+    "coupe": "coupe",
+    "coupé": "coupe",
+    "cabriolet": "cabriolet",
+    "mpv": "mpv",
+    "minibuss": "van",
+    "pickup": "pickup",
+    "kombi": "wagon",
+    "flerbruksbil": "mpv",
+    "crossover": "suv",
+}
+
+
+def _map_body_type(v: str) -> str:
+    return _BODY_TYPE_MAP.get(v.lower().strip(), v.lower().strip())
+
+
 def _parse_metadata(line: str) -> dict:
-    """Parse '2019 ∙ 75 000 km ∙ Hybrid bensin ∙ Automat' into fields."""
-    result = {"year": None, "mileage": None, "fuel_type": None, "transmission": None}
+    """Parse '2019 ∙ 75 000 km ∙ Hybrid bensin ∙ Automat ∙ 140 kW' into fields."""
+    result = {"year": None, "mileage": None, "fuel_type": None, "transmission": None, "horsepower": None}
     if not line:
         return result
 
@@ -30,10 +50,20 @@ def _parse_metadata(line: str) -> dict:
             if km_str:
                 result["mileage"] = int(km_str)
 
-        elif i >= 2 and result["fuel_type"] is None:
+        elif re.search(r"\d+\s*kW", part, re.IGNORECASE):
+            m = re.search(r"(\d+)\s*kW", part, re.IGNORECASE)
+            if m:
+                result["horsepower"] = round(int(m.group(1)) * 1.341)
+
+        elif re.search(r"\d+\s*hk", part, re.IGNORECASE):
+            m = re.search(r"(\d+)\s*hk", part, re.IGNORECASE)
+            if m:
+                result["horsepower"] = int(m.group(1))
+
+        elif i >= 2 and result["fuel_type"] is None and "km" not in part_clean:
             result["fuel_type"] = part.strip()
 
-        elif i >= 3 and result["transmission"] is None:
+        elif i >= 3 and result["transmission"] is None and "km" not in part_clean:
             result["transmission"] = part.strip()
 
     return result
@@ -46,7 +76,6 @@ def _parse_price(texts: list[str]) -> int | None:
             price_str = re.sub(r"[^\d]", "", texts[i - 1])
             if price_str:
                 return int(price_str)
-    # fallback: find a large number followed by kr in same string
     for t in texts:
         m = re.search(r"([\d\s\xa0]+)\s*kr", t)
         if m:
@@ -88,7 +117,6 @@ def _normalise(article) -> dict | None:
     if not url or not source_id:
         return None
 
-    # Ensure absolute URL
     if url.startswith("/"):
         url = "https://www.finn.no" + url
 
@@ -103,7 +131,6 @@ def _normalise(article) -> dict | None:
 
     brand, model = _parse_brand_model(title)
 
-    # Find metadata line (contains ∙ and a 4-digit year)
     meta_line = None
     for t in texts:
         if "∙" in t and re.search(r"\d{4}", t) and "km" in t:
@@ -113,7 +140,6 @@ def _normalise(article) -> dict | None:
     meta = _parse_metadata(meta_line)
     price = _parse_price(texts)
 
-    # Location: text after price/kr, before "Privat"/"Forhandler"
     location = None
     for t in texts:
         if "∙" in t and not re.search(r"\d{4}", t) and "km" not in t and "kr" not in t:
@@ -131,6 +157,7 @@ def _normalise(article) -> dict | None:
         "mileage": meta["mileage"],
         "fuel_type": meta["fuel_type"],
         "transmission": meta["transmission"],
+        "horsepower": meta["horsepower"],
         "price": price,
         "location": location,
         "listing_type": "buy_now",
@@ -160,8 +187,8 @@ def fetch_page(page: int, session: requests.Session, config: dict) -> list[dict]
 
 def fetch_detail(url: str, session: requests.Session, delay: float = 1.2) -> dict:
     """
-    Fetch a finn.no listing detail page and extract EU inspection dates
-    and Norwegian registration status from the tech specs table.
+    Fetch a finn.no listing detail page and extract EU inspection dates,
+    Norwegian registration status, horsepower, body type, and engine size.
     Returns a partial dict with only the fields that were found.
     """
     time.sleep(delay)
@@ -174,7 +201,6 @@ def fetch_detail(url: str, session: requests.Session, delay: float = 1.2) -> dic
 
     soup = BeautifulSoup(resp.text, "lxml")
 
-    # finn.no detail pages use <dt>/<dd> pairs in a definition list for car specs
     dt_elements = soup.find_all("dt")
     for dt in dt_elements:
         label = dt.get_text(strip=True).lower()
@@ -198,6 +224,22 @@ def fetch_detail(url: str, session: requests.Session, delay: float = 1.2) -> dic
 
         elif "ikke norsk bil" in label or "importert" in label:
             result["is_norwegian_reg"] = False
+
+        elif "effekt" in label:
+            kw_m = re.search(r"(\d+)\s*kW", value, re.IGNORECASE)
+            hk_m = re.search(r"(\d+)\s*hk", value, re.IGNORECASE)
+            if kw_m:
+                result["horsepower"] = round(int(kw_m.group(1)) * 1.341)
+            elif hk_m:
+                result["horsepower"] = int(hk_m.group(1))
+
+        elif "karosseri" in label or "biltype" in label:
+            result["body_type"] = _map_body_type(value)
+
+        elif "sylindervolum" in label or "motor" in label and "ccm" in value.lower():
+            cc_str = re.sub(r"[^\d]", "", value)
+            if cc_str:
+                result["engine_size_cc"] = int(cc_str)
 
     return result
 

@@ -44,6 +44,9 @@ class Car(Base):
     eu_next_deadline: Mapped[date | None] = mapped_column(Date)
     is_norwegian_reg: Mapped[bool | None] = mapped_column(Boolean)
     listing_type: Mapped[str | None] = mapped_column(Text)
+    horsepower: Mapped[int | None] = mapped_column(SmallInteger, index=True)
+    body_type: Mapped[str | None] = mapped_column(Text, index=True)
+    engine_size_cc: Mapped[int | None] = mapped_column(SmallInteger)
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -85,6 +88,8 @@ class OutlierScore(Base):
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     peer_group_size: Mapped[int] = mapped_column(Integer, nullable=False)
     peer_avg_price: Mapped[int] = mapped_column(Integer, nullable=False)
+    fair_value: Mapped[int | None] = mapped_column(Integer)
+    method: Mapped[str | None] = mapped_column(Text, default="zscore")
     detected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+﻿from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +45,10 @@ async def upsert_car(db: AsyncSession, item: dict) -> tuple[Car, bool]:
             location=item.get("location"),
             features=item.get("features", {}),
             status="active",
+            listing_type=item.get("listing_type"),
+            horsepower=item.get("horsepower"),
+            body_type=item.get("body_type"),
+            engine_size_cc=item.get("engine_size_cc"),
             last_seen_at=now,
         )
         db.add(car)
@@ -56,11 +60,9 @@ async def upsert_car(db: AsyncSession, item: dict) -> tuple[Car, bool]:
         return car, True
 
     else:
-        # Update last_seen and status
         existing.last_seen_at = now
         existing.status = "active"
 
-        # Write price history row only when price changes
         if price is not None and price != existing.price:
             existing.price = price
             db.add(PriceHistory(car_id=existing.id, price=price))

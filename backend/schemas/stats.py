@@ -29,3 +29,18 @@ class ModelStatsResponse(BaseModel):
     avg_price: int
     min_price: int
     max_price: int
+
+
+class ModelSoldStats(BaseModel):
+    brand: str
+    model: str
+    sold_count: int
+    avg_days_on_market: float | None
+    avg_last_price: int | None
+    min_last_price: int | None
+    max_last_price: int | None
+
+
+class SoldStatsResponse(BaseModel):
+    total_removed: int
+    by_model: list[ModelSoldStats]

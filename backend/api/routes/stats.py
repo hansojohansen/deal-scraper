@@ -9,8 +9,10 @@ from backend.dependencies import get_db
 from backend.schemas.stats import (
     BrandStatsResponse,
     KmBucket,
+    ModelSoldStats,
     ModelStatsResponse,
     PriceTrendPoint,
+    SoldStatsResponse,
     StatsSummaryResponse,
 )
 
@@ -99,3 +101,56 @@ async def models_stats(brand: str, db: AsyncSession = Depends(get_db)):
         )
         for row in r
     ]
+
+@router.get("/sold", response_model=SoldStatsResponse)
+async def sold_stats(
+    brand: str | None = None,
+    model: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Statistics derived from listings that have been removed (likely sold)."""
+    total_r = await db.execute(
+        select(func.count(Car.id)).where(Car.status == "removed")
+    )
+    total_removed = total_r.scalar() or 0
+
+    q = (
+        select(
+            Car.brand,
+            Car.model,
+            func.count(Car.id).label("sold_count"),
+            func.avg(
+                func.extract("epoch", Car.last_seen_at - Car.first_seen_at) / 86400
+            ).label("avg_days"),
+            func.avg(Car.price).label("avg_price"),
+            func.min(Car.price).label("min_price"),
+            func.max(Car.price).label("max_price"),
+        )
+        .where(Car.status == "removed", Car.brand.is_not(None), Car.model.is_not(None))
+        .group_by(Car.brand, Car.model)
+        .order_by(func.count(Car.id).desc())
+        .limit(200)
+    )
+    if brand:
+        q = q.where(Car.brand.ilike(f"%{brand}%"))
+    if model:
+        q = q.where(Car.model.ilike(f"%{model}%"))
+
+    result = await db.execute(q)
+    rows = result.all()
+
+    return SoldStatsResponse(
+        total_removed=total_removed,
+        by_model=[
+            ModelSoldStats(
+                brand=r.brand,
+                model=r.model,
+                sold_count=r.sold_count,
+                avg_days_on_market=round(float(r.avg_days), 1) if r.avg_days else None,
+                avg_last_price=int(r.avg_price) if r.avg_price else None,
+                min_last_price=int(r.min_price) if r.min_price else None,
+                max_last_price=int(r.max_price) if r.max_price else None,
+            )
+            for r in rows
+        ],
+    )

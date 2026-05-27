@@ -16,6 +16,8 @@ class OutlierSummary(BaseModel):
     reason: str
     peer_group_size: int
     peer_avg_price: int
+    fair_value: int | None = None
+    method: str | None = None
 
 class CarSummaryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -35,6 +37,9 @@ class CarSummaryResponse(BaseModel):
     eu_next_deadline: date | None = None
     is_norwegian_reg: bool | None = None
     listing_type: str | None = None
+    horsepower: int | None = None
+    body_type: str | None = None
+    engine_size_cc: int | None = None
     first_seen_at: datetime
     last_seen_at: datetime | None
     outlier_score: OutlierSummary | None = None
