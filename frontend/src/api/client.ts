@@ -1,13 +1,46 @@
-﻿const BASE = "";
+const BASE = "";
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, options);
+function getToken(): string | null {
+  return localStorage.getItem("auth_token");
+}
+
+function clearAuth() {
+  localStorage.removeItem("auth_token");
+  localStorage.removeItem("auth_user");
+}
+
+async function request<T>(path: string, options?: RequestInit, token?: string): Promise<T> {
+  const tok = token ?? getToken();
+  const headers: Record<string, string> = {
+    ...(options?.headers as Record<string, string>),
+  };
+  if (tok) headers["Authorization"] = `Bearer ${tok}`;
+
+  const res = await fetch(BASE + path, { ...options, headers });
+
+  if (res.status === 401) {
+    clearAuth();
+    window.location.href = "/login";
+    throw new Error("Session expired");
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: { message: res.statusText } }));
-    throw new Error(err.error?.message ?? res.statusText);
+    throw new Error(err.error?.message ?? err.detail ?? res.statusText);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
+}
+
+export interface User {
+  user_id: string;
+  email: string;
+  is_verified: boolean;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
 }
 
 export interface Car {
@@ -112,7 +145,6 @@ export interface Alert {
 }
 
 export interface AlertCreate {
-  notify_email: string;
   brand?: string;
   model?: string;
   year_min?: number;
@@ -137,6 +169,34 @@ export interface CarFilters {
 }
 
 export const api = {
+  auth: {
+    login: (email: string, password: string) =>
+      request<TokenResponse>("/api/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      }),
+    register: (email: string, password: string) =>
+      request<User>("/api/v1/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      }),
+    getMe: (token: string) =>
+      request<User>("/api/v1/auth/me", {}, token),
+    forgotPassword: (email: string) =>
+      request<object>("/api/v1/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      }),
+    resetPassword: (token: string, email: string, new_password: string) =>
+      request<object>("/api/v1/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, email, new_password }),
+      }),
+  },
   getCars: (params: Record<string, string | number | undefined>) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => v != null && v !== "" && q.set(k, String(v)));
