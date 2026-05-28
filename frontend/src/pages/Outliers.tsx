@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutGrid, LayoutList, ExternalLink, ArrowUpDown } from "lucide-react";
-import { api, type Outlier } from "../api/client";
+import { LayoutGrid, LayoutList, ExternalLink, ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
+import { api, type Outlier, type PeerCar } from "../api/client";
 
 const TIER_STYLE: Record<string, { label: string; cls: string }> = {
   excellent: { label: "Topp",  cls: "bg-emerald-900/50 text-emerald-400 border border-emerald-700" },
@@ -47,11 +47,78 @@ const TIER_FILTERS: { key: TierFilter; label: string }[] = [
   { key: "check",     label: "Sjekk nøye" },
 ];
 
+function PeerPanel({ outlier, peers, loading }: { outlier: Outlier; peers: PeerCar[]; loading: boolean }) {
+  if (loading) return <p className="text-xs text-slate-400 py-2">Laster sammenligninger…</p>;
+  if (!peers.length) return <p className="text-xs text-slate-500 py-2">Ingen sammenlignbare biler funnet.</p>;
+
+  const ref = outlier.fair_value ?? outlier.peer_avg_price;
+  const discount = ref ? Math.round(Math.abs((outlier.price ?? 0) / ref - 1) * 100) : 0;
+  const all = [...peers, { id: outlier.car_id, brand: outlier.brand, model: outlier.model, year: outlier.year, mileage: outlier.mileage, price: outlier.price, url: outlier.url, source: "finn.no", fuel_type: null, transmission: null } as PeerCar]
+    .sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
+
+  return (
+    <div className="mt-3 border-t border-slate-700 pt-3">
+      <p className="text-xs text-slate-400 mb-2 font-medium">
+        {outlier.price?.toLocaleString("no")} kr — {discount}% under snitt ({ref?.toLocaleString("no")} kr) · {peers.length} sammenlignbare biler
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-slate-500 border-b border-slate-700">
+              <th className="text-left py-1 pr-4 font-medium">År</th>
+              <th className="text-left py-1 pr-4 font-medium">Km</th>
+              <th className="text-left py-1 pr-4 font-medium">Pris</th>
+              <th className="text-left py-1 font-medium">Kilde</th>
+            </tr>
+          </thead>
+          <tbody>
+            {all.map((p) => {
+              const isDeal = p.id === outlier.car_id;
+              return (
+                <tr key={p.id} className={isDeal ? "bg-green-900/30" : ""}>
+                  <td className="py-1 pr-4 text-slate-300">{p.year}</td>
+                  <td className="py-1 pr-4 text-slate-300">{p.mileage?.toLocaleString("no")} km</td>
+                  <td className={`py-1 pr-4 font-semibold ${isDeal ? "text-green-400" : "text-slate-200"}`}>
+                    {p.price?.toLocaleString("no")} kr
+                    {isDeal && <span className="ml-2 text-green-500 font-medium">← dette tilbudet</span>}
+                  </td>
+                  <td className="py-1">
+                    <a href={p.url} target="_blank" rel="noreferrer" className="text-slate-500 hover:text-blue-400 underline">
+                      {p.source ?? "finn.no"}
+                    </a>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function Outliers() {
   const [view, setView] = useState<"table" | "cards">("table");
   const [sortKey, setSortKey] = useState<SortKey>("discount");
   const [sortAsc, setSortAsc] = useState(false);
   const [tierFilter, setTierFilter] = useState<TierFilter>("all");
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [peersCache, setPeersCache] = useState<Record<number, PeerCar[]>>({});
+  const [peersLoading, setPeersLoading] = useState<Record<number, boolean>>({});
+
+  const togglePeers = useCallback(async (o: Outlier) => {
+    const id = o.car_id;
+    if (expandedId === id) { setExpandedId(null); return; }
+    setExpandedId(id);
+    if (peersCache[id]) return;
+    setPeersLoading((prev) => ({ ...prev, [id]: true }));
+    try {
+      const peers = await api.getOutlierPeers(id);
+      setPeersCache((prev) => ({ ...prev, [id]: peers }));
+    } finally {
+      setPeersLoading((prev) => ({ ...prev, [id]: false }));
+    }
+  }, [expandedId, peersCache]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["outliers-full"],
@@ -153,33 +220,47 @@ export default function Outliers() {
                   <th className="px-4 py-3 w-10" />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700">
+              <tbody>
                 {sorted.map((o, i) => {
                   const d = pct(o);
                   const ref = o.fair_value ?? o.peer_avg_price;
+                  const expanded = expandedId === o.car_id;
                   return (
-                    <tr key={o.id} className="hover:bg-slate-700/50 transition-colors">
-                      <td className="px-4 py-3 text-slate-500 text-xs">{i + 1}</td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-slate-100 whitespace-nowrap">{o.brand} {o.model}</p>
-                        <p className="text-xs text-slate-500 truncate max-w-[200px]">{o.title}</p>
-                      </td>
-                      <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{o.year}</td>
-                      <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{o.mileage?.toLocaleString("no")} km</td>
-                      <td className="px-4 py-3 font-semibold text-slate-100 whitespace-nowrap">{o.price?.toLocaleString("no")} kr</td>
-                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-xs">
-                        {ref?.toLocaleString("no")} kr
-                        {o.method === "ols" && <span className="ml-1 text-slate-600">(OLS)</span>}
-                      </td>
-                      <td className="px-4 py-3 min-w-[140px]"><DealBar value={d} /></td>
-                      <td className="px-4 py-3"><QualityBadge tier={o.quality_tier} /></td>
-                      <td className="px-4 py-3">
-                        <a href={o.url} target="_blank" rel="noreferrer"
-                          className="text-slate-500 hover:text-blue-600 transition-colors">
-                          <ExternalLink size={15} />
-                        </a>
-                      </td>
-                    </tr>
+                    <>
+                      <tr key={o.id} className="border-b border-slate-700 hover:bg-slate-700/50 transition-colors">
+                        <td className="px-4 py-3 text-slate-500 text-xs">{i + 1}</td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-slate-100 whitespace-nowrap">{o.brand} {o.model}</p>
+                          <p className="text-xs text-slate-500 truncate max-w-[200px]">{o.title}</p>
+                        </td>
+                        <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{o.year}</td>
+                        <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{o.mileage?.toLocaleString("no")} km</td>
+                        <td className="px-4 py-3 font-semibold text-slate-100 whitespace-nowrap">{o.price?.toLocaleString("no")} kr</td>
+                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-xs">
+                          {ref?.toLocaleString("no")} kr
+                          {o.method === "ols" && <span className="ml-1 text-slate-600">(OLS)</span>}
+                        </td>
+                        <td className="px-4 py-3 min-w-[140px]"><DealBar value={d} /></td>
+                        <td className="px-4 py-3"><QualityBadge tier={o.quality_tier} /></td>
+                        <td className="px-4 py-3 flex items-center gap-2">
+                          <a href={o.url} target="_blank" rel="noreferrer"
+                            className="text-slate-500 hover:text-blue-600 transition-colors">
+                            <ExternalLink size={15} />
+                          </a>
+                          <button onClick={() => togglePeers(o)} title="Vis sammenligninger"
+                            className="text-slate-500 hover:text-amber-400 transition-colors">
+                            {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                          </button>
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr key={`${o.id}-peers`} className="border-b border-slate-700 bg-slate-900/60">
+                          <td colSpan={9} className="px-6 pb-4">
+                            <PeerPanel outlier={o} peers={peersCache[o.car_id] ?? []} loading={!!peersLoading[o.car_id]} />
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   );
                 })}
               </tbody>
@@ -191,6 +272,7 @@ export default function Outliers() {
           {sorted.map((o) => {
             const d = pct(o);
             const ref = o.fair_value ?? o.peer_avg_price;
+            const expanded = expandedId === o.car_id;
             return (
               <div key={o.id} className="bg-slate-800 rounded-xl border border-slate-700 p-4">
                 <div className="flex items-start justify-between gap-4">
@@ -214,9 +296,18 @@ export default function Outliers() {
                       {o.method === "ols" && " (OLS)"}
                     </p>
                     <DealBar value={d} />
-                    <p className="text-xs text-slate-600">n={o.peer_group_size}</p>
+                    <button
+                      onClick={() => togglePeers(o)}
+                      className="text-xs text-slate-400 hover:text-amber-400 flex items-center gap-1 ml-auto transition-colors"
+                    >
+                      {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      {expanded ? "Skjul" : `Vis ${o.peer_group_size} sammenligninger`}
+                    </button>
                   </div>
                 </div>
+                {expanded && (
+                  <PeerPanel outlier={o} peers={peersCache[o.car_id] ?? []} loading={!!peersLoading[o.car_id]} />
+                )}
               </div>
             );
           })}

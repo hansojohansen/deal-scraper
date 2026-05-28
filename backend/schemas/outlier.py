@@ -3,6 +3,20 @@
 from pydantic import BaseModel, ConfigDict
 
 
+class PeerCarResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    brand: str | None = None
+    model: str | None = None
+    year: int | None = None
+    mileage: int | None = None
+    price: int | None = None
+    url: str
+    source: str | None = None
+    fuel_type: str | None = None
+    transmission: str | None = None
+
+
 class OutlierResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int

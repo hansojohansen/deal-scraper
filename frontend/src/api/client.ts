@@ -44,6 +44,19 @@ export interface OutlierScore {
   quality_tier: string | null;
 }
 
+export interface PeerCar {
+  id: number;
+  brand: string | null;
+  model: string | null;
+  year: number | null;
+  mileage: number | null;
+  price: number | null;
+  url: string;
+  source: string | null;
+  fuel_type: string | null;
+  transmission: string | null;
+}
+
 export interface Outlier extends OutlierScore {
   brand: string | null;
   model: string | null;
@@ -139,6 +152,8 @@ export const api = {
     if (quality_tier) q.set("quality_tier", quality_tier);
     return request<Outlier[]>(`/api/v1/outliers?${q}`);
   },
+  getOutlierPeers: (carId: number, limit = 20) =>
+    request<PeerCar[]>(`/api/v1/outliers/${carId}/peers?limit=${limit}`),
   getAlerts: () => request<Alert[]>("/api/v1/alerts"),
   createAlert: (body: AlertCreate) =>
     request<Alert>("/api/v1/alerts", {

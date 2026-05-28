@@ -1,9 +1,11 @@
-﻿from fastapi import APIRouter, Depends, Query
+﻿from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.crud import outliers as outlier_crud
+from backend.db.models import Car
 from backend.dependencies import get_db
-from backend.schemas.outlier import OutlierResponse
+from backend.schemas.outlier import OutlierResponse, PeerCarResponse
 
 router = APIRouter(prefix="/api/v1/outliers", tags=["outliers"])
 
@@ -28,3 +30,21 @@ async def list_outliers(
             fair_value=outlier.fair_value, method=outlier.method, quality_tier=outlier.quality_tier,
         ))
     return result
+
+
+@router.get("/{car_id}/peers", response_model=list[PeerCarResponse])
+async def get_outlier_peers(
+    car_id: int,
+    limit: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Car).where(Car.id == car_id))
+    car = result.scalar_one_or_none()
+    if car is None:
+        raise HTTPException(status_code=404, detail="Car not found")
+
+    peers = await outlier_crud.get_peers(
+        db, car_id=car_id, brand=car.brand, model=car.model,
+        year=car.year, mileage=car.mileage, limit=limit,
+    )
+    return [PeerCarResponse.model_validate(p) for p in peers]

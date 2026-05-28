@@ -241,8 +241,7 @@ async def run_detection(db: AsyncSession) -> dict:
                 continue
             peer_prices = [c.price for c in z_peers]
             score = _z_score(car.price, peer_prices)
-            iqr_flag = _iqr_is_outlier(car.price, peer_prices)
-            is_deal = score < Z_THRESHOLD and iqr_flag
+            is_deal = score < Z_THRESHOLD
             fair_value = None
             reason = _reason(car, peer_prices)
             peer_avg = int(statistics.mean(peer_prices))
