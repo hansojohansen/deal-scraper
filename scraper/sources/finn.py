@@ -1,4 +1,5 @@
-﻿import re
+﻿import random
+import re
 import time
 from datetime import date
 
@@ -6,11 +7,19 @@ import requests
 import yaml
 from bs4 import BeautifulSoup
 
+from scraper.retry import with_retry
+
 
 def _load_config() -> dict:
     with open("config.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)["scraper"]["finn"]
 
+
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+]
 
 _BODY_TYPE_MAP = {
     "sedan": "sedan",
@@ -168,7 +177,7 @@ def _normalise(article) -> dict | None:
 def fetch_page(page: int, session: requests.Session, config: dict) -> list[dict]:
     """Fetch one page from finn.no and return normalised listing dicts."""
     url = f"https://www.finn.no/mobility/search/car?page={page}"
-    time.sleep(config["delay_seconds"])
+    time.sleep(config["delay_seconds"] * random.uniform(0.7, 1.3))
 
     resp = session.get(url, timeout=15)
     resp.raise_for_status()
@@ -261,11 +270,17 @@ def get_total_pages(session: requests.Session, config: dict) -> int:
     return 100  # fallback
 
 
+def fetch_page_resilient(page: int, session: requests.Session, config: dict) -> list[dict]:
+    """fetch_page with automatic retry and exponential backoff."""
+    return with_retry(fetch_page, page, session, config, max_attempts=3, base_delay=2.0)
+
+
 def build_session(config: dict) -> requests.Session:
     session = requests.Session()
     session.headers.update({
-        "User-Agent": config["user_agent"],
+        "User-Agent": random.choice(_USER_AGENTS),
         "Accept-Language": "nb-NO,nb;q=0.9,no;q=0.8,en;q=0.7",
         "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+        "Referer": "https://www.finn.no/",
     })
     return session

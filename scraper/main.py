@@ -1,14 +1,19 @@
-﻿"""
+"""
 Scraper orchestrator: COLLECT -> FILTER -> STORE
 ECC pattern: iterative retrieval with cursor state persistence.
 Supports multiple sources: finn.no, nettbil, auksjonen.
+
+Resilience features:
+- Per-batch cursor checkpointing (every BATCH_SIZE pages)
+- Concurrent page fetching via asyncio.to_thread (semaphore=CONCURRENCY)
+- Skip failed pages (continue) rather than abort
+- Retry with exponential backoff per page via fetch_page_resilient
 """
 
 import argparse
 import asyncio
 import json
 import sys
-from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,6 +24,8 @@ from scraper.sources import auksjonen, finn, nettbil
 
 CURSOR_FILE = Path("scraper/state/cursor.json")
 FEEDBACK_FILE = Path("data/feedback.json")
+BATCH_SIZE = 10    # pages per checkpoint batch
+CONCURRENCY = 3    # max concurrent requests within a batch
 
 
 def _load_cursor() -> dict:
@@ -37,6 +44,25 @@ def _save_cursor(state: dict) -> None:
 def _load_config() -> dict:
     with open("config.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+async def _fetch_batch_concurrent(
+    pages: list[int], session, config: dict
+) -> list[tuple[int, list[dict], str | None]]:
+    """Fetch a batch of pages concurrently. Returns list of (page, items, error_or_None)."""
+    sem = asyncio.Semaphore(CONCURRENCY)
+
+    async def fetch_one(page: int):
+        async with sem:
+            try:
+                items = await asyncio.to_thread(
+                    finn.fetch_page_resilient, page, session, config
+                )
+                return page, items, None
+            except Exception as e:
+                return page, [], str(e)
+
+    return list(await asyncio.gather(*[fetch_one(p) for p in pages]))
 
 
 async def _enrich_finn_details(max_cars: int = 50) -> dict:
@@ -67,7 +93,9 @@ async def _enrich_finn_details(max_cars: int = 50) -> dict:
 
     for car_id, url in rows:
         try:
-            detail = finn.fetch_detail(url, session, delay=finn_config["delay_seconds"])
+            detail = await asyncio.to_thread(
+                finn.fetch_detail, url, session, finn_config["delay_seconds"]
+            )
             if detail:
                 async with session_factory() as db:
                     await db.execute(
@@ -86,7 +114,7 @@ async def _enrich_finn_details(max_cars: int = 50) -> dict:
 async def run(dry_run: bool = False, max_pages: int = 9999, enrich_details: bool = False) -> dict:
     """
     Main scrape cycle. Returns summary dict.
-    Steps: fetch pages -> filter -> dedup -> upsert DB -> save cursor
+    Finn pages are fetched in batches with per-batch DB commits and cursor checkpoints.
     """
     config = _load_config()
     finn_config = config["scraper"]["finn"]
@@ -105,114 +133,153 @@ async def run(dry_run: bool = False, max_pages: int = 9999, enrich_details: bool
         "dry_run": dry_run,
     }
 
-    # --- COLLECT from all sources ---
-    sources = [
-        ("finn", finn_config, finn),
-        ("nettbil", {}, nettbil),
-        ("auksjonen", {}, auksjonen),
-    ]
+    if not dry_run:
+        from backend.db.crud import cars as cars_crud
+        from backend.db.session import session_factory
 
-    all_items: list[dict] = []
-    did_full_finn_scrape = False
-    finn_total_pages = 0
-    finn_actual_pages = 0
+    # --- FINN ---
+    finn_cursor = cursor.get("finn", {})
+    resume_page = finn_cursor.get("last_page", 0) + 1
 
-    for source_key, source_config, source_module in sources:
-        source_cursor = cursor.get(source_key, {})
-        last_known_url = source_cursor.get("last_first_url")
-        print(f"[scraper] Scraping {source_key} — max_pages={max_pages}, dry_run={dry_run}")
+    session = finn.build_session(finn_config)
+    finn_total_pages = finn.get_total_pages(session, finn_config)
+    finn_actual_pages = min(max_pages, finn_total_pages)
+    did_full_finn_scrape = finn_actual_pages >= finn_total_pages
 
-        if source_key == "finn":
-            session = finn.build_session(finn_config)
-            finn_total_pages = finn.get_total_pages(session, finn_config)
-            finn_actual_pages = min(max_pages, finn_total_pages)
-            did_full_finn_scrape = finn_actual_pages >= finn_total_pages
-            print(f"[scraper] finn: {finn_total_pages} total pages, scraping {finn_actual_pages} (full={did_full_finn_scrape})")
-            for page in range(1, finn_actual_pages + 1):
+    if resume_page > finn_actual_pages:
+        print(f"[scraper] finn: prior run completed (last_page={resume_page - 1}), starting fresh")
+        resume_page = 1
+
+    print(
+        f"[scraper] finn: {finn_total_pages} total pages, scraping up to {finn_actual_pages}"
+        f" (resume from page {resume_page}, full={did_full_finn_scrape})"
+    )
+
+    finn_seen_urls: set[str] = set()
+    batch_items: list[dict] = []  # kept in scope for dry_run sample
+
+    for batch_start in range(resume_page, finn_actual_pages + 1, BATCH_SIZE):
+        batch_pages = list(range(
+            batch_start,
+            min(batch_start + BATCH_SIZE, finn_actual_pages + 1),
+        ))
+
+        if dry_run:
+            batch_results = []
+            for p in batch_pages:
                 try:
-                    items = finn.fetch_page(page, session, finn_config)
-                    summary["pages_fetched"] += 1
-
-                    if page == 1 and items and last_known_url:
-                        if items[0]["url"] == last_known_url:
-                            print(f"[scraper] {source_key}: cursor match — no new listings")
-                            break
-
-                    for item in items:
-                        if is_relevant(item, filter_config):
-                            all_items.append(item)
-                        else:
-                            summary["filtered_out"] += 1
-
-                    summary["scraped"] += len(items)
-                    if not items:
-                        break
+                    items = finn.fetch_page_resilient(p, session, finn_config)
+                    batch_results.append((p, items, None))
                 except Exception as e:
-                    summary["errors"].append(f"{source_key} page {page}: {e}")
-                    print(f"[scraper] ERROR {source_key} page {page}: {e}")
-                    break
+                    batch_results.append((p, [], str(e)))
         else:
-            source_session = source_module.build_session()
-            try:
-                items = source_module.fetch_all(source_session, max_pages=max_pages)
-                summary["pages_fetched"] += max(1, len(items) // 20)
-                summary["scraped"] += len(items)
-                for item in items:
-                    if is_relevant(item, filter_config):
-                        all_items.append(item)
-                    else:
-                        summary["filtered_out"] += 1
-                print(f"[scraper] {source_key}: {len(items)} listings")
-            except Exception as e:
-                summary["errors"].append(f"{source_key}: {e}")
-                print(f"[scraper] ERROR {source_key}: {e}")
+            batch_results = await _fetch_batch_concurrent(batch_pages, session, finn_config)
 
-    print(f"[scraper] Total: {summary['scraped']} scraped, {len(all_items)} after filter")
-
-    if dry_run:
-        print("[scraper] DRY RUN — sample output:")
-        for item in all_items[:5]:
-            price = item.get("price") or 0
-            mileage = item.get("mileage") or 0
-            print(f"  [{item['source']}] {item.get('brand')} {item.get('model')} {item.get('year')} | {price:,} NOK | {mileage} km | {item['listing_type']} | {item['url']}")
-        summary["dry_run_sample"] = all_items[:5]
-        return summary
-
-    # --- STORE ---
-    from backend.db.crud import cars as cars_crud
-    from backend.db.session import session_factory
-
-    async with session_factory() as db:
-        for item in all_items:
-            try:
-                car, is_new = await cars_crud.upsert_car(db, item)
-                if is_new:
-                    summary["new"] += 1
+        batch_items = []
+        for page_num, items, err in batch_results:
+            if err:
+                summary["errors"].append(f"finn page {page_num}: {err}")
+                print(f"[scraper] WARN finn page {page_num}: {err}")
+                continue
+            summary["pages_fetched"] += 1
+            summary["scraped"] += len(items)
+            for item in items:
+                finn_seen_urls.add(item["url"])
+                if is_relevant(item, filter_config):
+                    batch_items.append(item)
                 else:
-                    summary["updated"] += 1
-            except Exception as e:
-                summary["errors"].append(f"upsert {item['url']}: {e}")
+                    summary["filtered_out"] += 1
 
-        await db.commit()
+        if not dry_run and batch_items:
+            async with session_factory() as db:
+                for item in batch_items:
+                    try:
+                        car, is_new = await cars_crud.upsert_car(db, item)
+                        if is_new:
+                            summary["new"] += 1
+                        else:
+                            summary["updated"] += 1
+                    except Exception as e:
+                        summary["errors"].append(f"upsert {item.get('url')}: {e}")
+                await db.commit()
 
-    print(f"[scraper] Stored: {summary['new']} new, {summary['updated']} updated")
+        # Checkpoint cursor after each batch
+        if not dry_run:
+            last_page_done = batch_pages[-1]
+            cursor["finn"] = {
+                "last_page": last_page_done,
+                "total_pages": finn_actual_pages,
+                "run_started_at": summary["started_at"],
+                "last_full_run_at": finn_cursor.get("last_full_run_at"),
+            }
+            _save_cursor(cursor)
+            print(
+                f"[scraper] finn: checkpoint page {last_page_done}/{finn_actual_pages}"
+                f" | new={summary['new']} updated={summary['updated']}"
+            )
 
-    # --- MARK REMOVED (only on full scrapes to avoid false removals) ---
-    if did_full_finn_scrape:
-        seen_by_source: dict[str, set[str]] = defaultdict(set)
-        for item in all_items:
-            seen_by_source[item["source"]].add(item["url"])
+    # Mark full run complete in cursor
+    if not dry_run and did_full_finn_scrape:
+        cursor["finn"] = {
+            "last_full_run_at": datetime.now(UTC).isoformat(),
+            "total_pages": finn_actual_pages,
+        }
+        _save_cursor(cursor)
 
+    # --- OTHER SOURCES ---
+    all_other_items: list[dict] = []
+    for source_key, source_module in [("nettbil", nettbil), ("auksjonen", auksjonen)]:
+        source_session = source_module.build_session()
+        try:
+            items = source_module.fetch_all(source_session, max_pages=max_pages)
+            summary["scraped"] += len(items)
+            for item in items:
+                if is_relevant(item, filter_config):
+                    all_other_items.append(item)
+                else:
+                    summary["filtered_out"] += 1
+            print(f"[scraper] {source_key}: {len(items)} listings")
+        except Exception as e:
+            summary["errors"].append(f"{source_key}: {e}")
+            print(f"[scraper] ERROR {source_key}: {e}")
+
+    if not dry_run and all_other_items:
         async with session_factory() as db:
-            for source, seen_urls in seen_by_source.items():
-                count = await cars_crud.mark_unseen_as_removed(db, seen_urls, source)
-                summary["removed"][source] = count
+            for item in all_other_items:
+                try:
+                    car, is_new = await cars_crud.upsert_car(db, item)
+                    if is_new:
+                        summary["new"] += 1
+                    else:
+                        summary["updated"] += 1
+                except Exception as e:
+                    summary["errors"].append(f"upsert {item.get('url')}: {e}")
             await db.commit()
 
-        total_removed = sum(summary["removed"].values())
-        print(f"[scraper] Marked removed: {total_removed} listings across {len(summary['removed'])} sources")
+    print(
+        f"[scraper] Total: {summary['scraped']} scraped,"
+        f" {summary['filtered_out']} filtered, {summary['new']} new, {summary['updated']} updated"
+    )
 
-    # --- ENRICH detail pages (finn only) ---
+    if dry_run:
+        print("[scraper] DRY RUN — sample output (last batch):")
+        sample = batch_items[:5]
+        for item in sample:
+            price = item.get("price") or 0
+            mileage = item.get("mileage") or 0
+            print(f"  [{item['source']}] {item.get('brand')} {item.get('model')} {item.get('year')} | {price:,} NOK | {mileage} km | {item.get('listing_type')} | {item['url']}")
+        summary["dry_run_sample"] = sample
+        return summary
+
+    # --- MARK REMOVED (only on full scrapes) ---
+    if did_full_finn_scrape:
+        async with session_factory() as db:
+            count = await cars_crud.mark_unseen_as_removed(db, finn_seen_urls, "finn.no")
+            summary["removed"]["finn.no"] = count
+            await db.commit()
+        print(f"[scraper] Marked removed: {count} finn.no listings")
+
+    # --- ENRICH detail pages ---
     if enrich_details:
         enrich_result = await _enrich_finn_details(max_cars=50)
         summary["enriched"] = enrich_result
@@ -229,18 +296,6 @@ async def run(dry_run: bool = False, max_pages: int = 9999, enrich_details: bool
     dispatch_result = await dispatch_alerts()
     summary["alerts_sent"] = dispatch_result["notifications_sent"]
     print(f"[scraper] Alerts: {dispatch_result['notifications_sent']} notifications sent")
-
-    # Save cursor
-    finn_items = [i for i in all_items if i["source"] == "finn.no"]
-    first_finn_url = finn_items[0]["url"] if finn_items else cursor.get("finn", {}).get("last_first_url")
-    _save_cursor({
-        **cursor,
-        "finn": {
-            "last_first_url": first_finn_url,
-            "last_run_at": datetime.now(UTC).isoformat(),
-            "last_new_count": summary["new"],
-        },
-    })
 
     _update_feedback(summary)
     return summary

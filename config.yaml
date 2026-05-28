@@ -23,6 +23,10 @@ outlier:
   mileage_range: 30000          # ±30k km for z-score peer group
   ols_min_peers: 8              # minimum peers for OLS regression (primary method)
   ols_deal_threshold: -0.15     # flag if OLS residual below -15% of fair value
+  log_model: true               # use log-linear price model (captures exponential depreciation)
+  training_filter_low_pct: 0.20 # exclude peers priced below 20% of median (scam filter)
+  training_filter_high_pct: 5.0 # exclude peers priced above 500% of median (outlier filter)
+  min_price_nok: 30000          # skip quality-tier cars below this price (salvage/parts)
 
 ai:
   batch_size: 5

@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LayoutGrid, LayoutList, ExternalLink, ArrowUpDown } from "lucide-react";
 import { api, type Outlier } from "../api/client";
@@ -9,8 +9,26 @@ const SOURCE_STYLE: Record<string, string> = {
   auksjonen: "bg-amber-900/40 text-amber-400",
 };
 
+const TIER_STYLE: Record<string, { label: string; cls: string }> = {
+  excellent: { label: "Topp",  cls: "bg-emerald-900/50 text-emerald-400 border border-emerald-700" },
+  good:      { label: "God",   cls: "bg-blue-900/50 text-blue-400 border border-blue-700" },
+  check:     { label: "Sjekk", cls: "bg-amber-900/50 text-amber-400 border border-amber-700" },
+  skip:      { label: "Skip",  cls: "bg-slate-800 text-slate-500 border border-slate-700" },
+};
+
+function QualityBadge({ tier }: { tier: string | null }) {
+  if (!tier) return null;
+  const t = TIER_STYLE[tier] ?? TIER_STYLE.good;
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${t.cls}`}>
+      {t.label}
+    </span>
+  );
+}
+
 function pct(o: Outlier) {
-  return Math.round(Math.abs((o.price ?? 0) / o.peer_avg_price - 1) * 100);
+  const ref = o.fair_value ?? o.peer_avg_price;
+  return Math.round(Math.abs((o.price ?? 0) / ref - 1) * 100);
 }
 
 function DealBar({ value }: { value: number }) {
@@ -26,11 +44,20 @@ function DealBar({ value }: { value: number }) {
 }
 
 type SortKey = "discount" | "price" | "year" | "mileage";
+type TierFilter = "all" | "excellent" | "good" | "check";
+
+const TIER_FILTERS: { key: TierFilter; label: string }[] = [
+  { key: "all",       label: "Alle" },
+  { key: "excellent", label: "Topp deal" },
+  { key: "good",      label: "God deal" },
+  { key: "check",     label: "Sjekk nøye" },
+];
 
 export default function Outliers() {
   const [view, setView] = useState<"table" | "cards">("table");
   const [sortKey, setSortKey] = useState<SortKey>("discount");
   const [sortAsc, setSortAsc] = useState(false);
+  const [tierFilter, setTierFilter] = useState<TierFilter>("all");
 
   const { data, isLoading } = useQuery({
     queryKey: ["outliers-full"],
@@ -42,7 +69,11 @@ export default function Outliers() {
     else { setSortKey(k); setSortAsc(false); }
   }
 
-  const sorted = [...(data ?? [])].sort((a, b) => {
+  const filtered = (data ?? []).filter(
+    (o) => tierFilter === "all" || o.quality_tier === tierFilter
+  );
+
+  const sorted = [...filtered].sort((a, b) => {
     let diff = 0;
     if (sortKey === "discount") diff = pct(a) - pct(b);
     else if (sortKey === "price") diff = (a.price ?? 0) - (b.price ?? 0);
@@ -94,6 +125,23 @@ export default function Outliers() {
         </div>
       </div>
 
+      {/* Quality tier filter */}
+      <div className="flex items-center gap-2">
+        {TIER_FILTERS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setTierFilter(key)}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              tierFilter === key
+                ? "bg-blue-600 text-white"
+                : "bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {view === "table" ? (
         <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
           <div className="overflow-x-auto">
@@ -105,15 +153,16 @@ export default function Outliers() {
                   <Th label="År" k="year" />
                   <Th label="Km" k="mileage" />
                   <Th label="Pris" k="price" />
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Snitt</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Takst</th>
                   <Th label="Rabatt" k="discount" />
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Kilde</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Kvalitet</th>
                   <th className="px-4 py-3 w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700">
                 {sorted.map((o, i) => {
                   const d = pct(o);
+                  const ref = o.fair_value ?? o.peer_avg_price;
                   return (
                     <tr key={o.id} className="hover:bg-slate-700/50 transition-colors">
                       <td className="px-4 py-3 text-slate-500 text-xs">{i + 1}</td>
@@ -124,13 +173,12 @@ export default function Outliers() {
                       <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{o.year}</td>
                       <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{o.mileage?.toLocaleString("no")} km</td>
                       <td className="px-4 py-3 font-semibold text-slate-100 whitespace-nowrap">{o.price?.toLocaleString("no")} kr</td>
-                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{o.peer_avg_price.toLocaleString("no")} kr</td>
-                      <td className="px-4 py-3 min-w-[140px]"><DealBar value={d} /></td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${SOURCE_STYLE[o.reason?.split(" ")[0] ?? ""] ?? "bg-gray-100 text-slate-400"}`}>
-                          finn
-                        </span>
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-xs">
+                        {ref?.toLocaleString("no")} kr
+                        {o.method === "ols" && <span className="ml-1 text-slate-600">(OLS)</span>}
                       </td>
+                      <td className="px-4 py-3 min-w-[140px]"><DealBar value={d} /></td>
+                      <td className="px-4 py-3"><QualityBadge tier={o.quality_tier} /></td>
                       <td className="px-4 py-3">
                         <a href={o.url} target="_blank" rel="noreferrer"
                           className="text-slate-500 hover:text-blue-600 transition-colors">
@@ -148,23 +196,31 @@ export default function Outliers() {
         <div className="space-y-3">
           {sorted.map((o) => {
             const d = pct(o);
+            const ref = o.fair_value ?? o.peer_avg_price;
             return (
               <div key={o.id} className="bg-slate-800 rounded-xl border border-slate-700 p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <a href={o.url} target="_blank" rel="noreferrer"
-                      className="font-semibold text-amber-400 hover:underline">
-                      {o.title ?? `${o.brand} ${o.model}`}
-                    </a>
-                    <p className="text-sm text-slate-400 mt-0.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <a href={o.url} target="_blank" rel="noreferrer"
+                        className="font-semibold text-amber-400 hover:underline">
+                        {o.title ?? `${o.brand} ${o.model}`}
+                      </a>
+                      <QualityBadge tier={o.quality_tier} />
+                    </div>
+                    <p className="text-sm text-slate-400">
                       {o.year} · {o.mileage?.toLocaleString("no")} km
                     </p>
                     <p className="text-xs text-slate-500 mt-1">{o.reason}</p>
                   </div>
                   <div className="text-right shrink-0 space-y-1">
                     <p className="text-xl font-bold text-slate-100">{o.price?.toLocaleString("no")} kr</p>
+                    <p className="text-xs text-slate-500">
+                      Takst: {ref?.toLocaleString("no")} kr
+                      {o.method === "ols" && " (OLS)"}
+                    </p>
                     <DealBar value={d} />
-                    <p className="text-xs text-slate-500">Z = {o.score.toFixed(2)} · n={o.peer_group_size}</p>
+                    <p className="text-xs text-slate-600">n={o.peer_group_size}</p>
                   </div>
                 </div>
               </div>

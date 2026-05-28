@@ -19,3 +19,6 @@ class OutlierResponse(BaseModel):
     price: int | None = None
     url: str | None = None
     title: str | None = None
+    fair_value: int | None = None
+    method: str | None = None
+    quality_tier: str | None = None

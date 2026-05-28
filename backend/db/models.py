@@ -90,6 +90,7 @@ class OutlierScore(Base):
     peer_avg_price: Mapped[int] = mapped_column(Integer, nullable=False)
     fair_value: Mapped[int | None] = mapped_column(Integer)
     method: Mapped[str | None] = mapped_column(Text, default="zscore")
+    quality_tier: Mapped[str | None] = mapped_column(Text)
     detected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

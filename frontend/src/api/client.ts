@@ -39,6 +39,9 @@ export interface OutlierScore {
   peer_group_size: number;
   peer_avg_price: number;
   detected_at: string;
+  fair_value: number | null;
+  method: string | null;
+  quality_tier: string | null;
 }
 
 export interface Outlier extends OutlierScore {
@@ -131,7 +134,11 @@ export const api = {
   getBrands: () => request<BrandStat[]>("/api/v1/stats/brands"),
   getModelStats: (brand: string) =>
     request<ModelStats[]>(`/api/v1/stats/models?brand=${encodeURIComponent(brand)}`),
-  getOutliers: (limit = 50) => request<Outlier[]>(`/api/v1/outliers?limit=${limit}`),
+  getOutliers: (limit = 50, quality_tier?: string) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (quality_tier) q.set("quality_tier", quality_tier);
+    return request<Outlier[]>(`/api/v1/outliers?${q}`);
+  },
   getAlerts: () => request<Alert[]>("/api/v1/alerts"),
   createAlert: (body: AlertCreate) =>
     request<Alert>("/api/v1/alerts", {

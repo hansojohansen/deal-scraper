@@ -1,10 +1,14 @@
-﻿"""
+"""
 OLS regression residual deal detector with Z-score + IQR fallback.
 
-Primary (>=8 peers): OLS price ~ year + mileage [+ horsepower] per brand+model.
-Fallback (<8 peers): Z-score + IQR on windowed peer group (original logic).
+Primary (>=8 peers): log-linear OLS  log(price) ~ age + log(mileage+1) [+ log(hp+1)]
+  - Training data filtered to [20%, 500%] of peer median to exclude scams/outliers
+  - fair_value = exp(predicted log-price)
+Fallback (<8 peers): Z-score + IQR on windowed peer group.
 """
+import math
 import statistics
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -23,14 +27,20 @@ OLS_DEAL_THRESHOLD: float = _cfg.get("ols_deal_threshold", -0.15)
 IQR_MULT: float = _cfg["iqr_multiplier"]
 YEAR_WINDOW: int = _cfg["year_range"]
 MILEAGE_WINDOW: int = _cfg["mileage_range"]
+USE_LOG_MODEL: bool = _cfg.get("log_model", True)
+TRAIN_LOW_PCT: float = _cfg.get("training_filter_low_pct", 0.20)
+TRAIN_HIGH_PCT: float = _cfg.get("training_filter_high_pct", 5.0)
+MIN_PRICE_NOK: int = _cfg.get("min_price_nok", 30000)
+
+_CURRENT_YEAR: int = date.today().year
 
 
 # ---------------------------------------------------------------------------
-# OLS helpers
+# Log-linear OLS helpers
 # ---------------------------------------------------------------------------
 
 def _ols_peers(car: "Car", all_cars: list["Car"]) -> list["Car"]:
-    """All same brand+model cars with non-null price, year, mileage (no windowing)."""
+    """All same brand+model cars with non-null price, year, mileage."""
     return [
         c for c in all_cars
         if c.id != car.id
@@ -42,14 +52,30 @@ def _ols_peers(car: "Car", all_cars: list["Car"]) -> list["Car"]:
     ]
 
 
-def _fit_ols(peers: list["Car"], include_hp: bool) -> "np.ndarray | None":
-    """Fit OLS: price ~ 1 + year + mileage [+ horsepower]. Returns coefficients or None."""
-    features = [
-        [1.0, float(c.year), float(c.mileage)] + ([float(c.horsepower)] if include_hp else [])
-        for c in peers
-    ]
+def _fit_log_ols(peers: list["Car"], include_hp: bool) -> "np.ndarray | None":
+    """
+    Fit log-linear OLS: log(price) ~ 1 + age_years + log(mileage+1) [+ log(hp+1)].
+    Filters training data to [TRAIN_LOW_PCT, TRAIN_HIGH_PCT] of peer median before fitting.
+    Returns coefficients or None if rank-deficient or insufficient clean peers.
+    """
+    prices = [c.price for c in peers]
+    median_price = statistics.median(prices)
+    lo, hi = TRAIN_LOW_PCT * median_price, TRAIN_HIGH_PCT * median_price
+    clean = [c for c in peers if lo < c.price < hi]
+
+    if len(clean) < MIN_OLS_PEERS:
+        return None
+
+    features = []
+    for c in clean:
+        age = float(_CURRENT_YEAR - c.year)
+        row = [1.0, age, math.log(c.mileage + 1)]
+        if include_hp:
+            row.append(math.log(c.horsepower + 1))
+        features.append(row)
+
     X = np.array(features)
-    y = np.array([float(c.price) for c in peers])
+    y = np.array([math.log(c.price) for c in clean])
     try:
         coeffs, _, rank, _ = np.linalg.lstsq(X, y, rcond=None)
         if rank < X.shape[1]:
@@ -59,11 +85,13 @@ def _fit_ols(peers: list["Car"], include_hp: bool) -> "np.ndarray | None":
         return None
 
 
-def _predict(car: "Car", coeffs: "np.ndarray", include_hp: bool) -> float:
-    x = [1.0, float(car.year), float(car.mileage)]
+def _predict_log(car: "Car", coeffs: "np.ndarray", include_hp: bool) -> float:
+    """Predict fair value as exp(dot(coeffs, features))."""
+    age = float(_CURRENT_YEAR - car.year)
+    x = [1.0, age, math.log(car.mileage + 1)]
     if include_hp:
-        x.append(float(car.horsepower))
-    return float(np.dot(coeffs, x))
+        x.append(math.log(car.horsepower + 1))
+    return math.exp(float(np.dot(coeffs, x)))
 
 
 def _ols_score(
@@ -83,15 +111,15 @@ def _ols_score(
     include_hp = car.horsepower is not None and len(hp_peers) >= MIN_OLS_PEERS
 
     working_peers = hp_peers if include_hp else ols_peers
-    coeffs = _fit_ols(working_peers, include_hp)
+    coeffs = _fit_log_ols(working_peers, include_hp)
     if coeffs is None and include_hp:
-        coeffs = _fit_ols(ols_peers, False)
+        coeffs = _fit_log_ols(ols_peers, False)
         include_hp = False
         working_peers = ols_peers
     if coeffs is None:
         return None
 
-    fair_value = _predict(car, coeffs, include_hp)
+    fair_value = _predict_log(car, coeffs, include_hp)
     if fair_value <= 0:
         return None
 
@@ -105,7 +133,7 @@ def _ols_score(
 
 
 # ---------------------------------------------------------------------------
-# Z-score + IQR fallback (original logic, unchanged)
+# Z-score + IQR fallback
 # ---------------------------------------------------------------------------
 
 def _peer_group(car: "Car", candidates: list["Car"]) -> list["Car"]:
@@ -156,6 +184,34 @@ def _reason(car: "Car", peer_prices: list[int]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Quality tier
+# ---------------------------------------------------------------------------
+
+def _quality_tier(car: "Car", score: float, method: str) -> str:
+    """
+    Classify deal quality beyond the raw score.
+    skip      — likely salvage/scam/missing data, don't surface to users
+    check     — genuine deal but buyer should verify (import, no EU data)
+    excellent — best deals with Norwegian reg and current EU inspection
+    good      — default for any genuine priced-below-market listing
+    """
+    if car.price and car.price < MIN_PRICE_NOK:
+        return "skip"
+    if car.mileage and car.mileage > 400_000:
+        return "skip"
+    if car.year is None:
+        return "skip"
+    if car.is_norwegian_reg is False:
+        return "check"
+    car_age = _CURRENT_YEAR - car.year
+    if car_age > 4 and car.eu_next_deadline is None:
+        return "check"
+    if method == "ols" and score < -0.25:
+        return "excellent"
+    return "good"
+
+
+# ---------------------------------------------------------------------------
 # Main detection loop
 # ---------------------------------------------------------------------------
 
@@ -195,6 +251,7 @@ async def run_detection(db: AsyncSession) -> dict:
             stale = score >= STALE_THRESHOLD
 
         if is_deal:
+            tier = _quality_tier(car, score, method)
             existing = await db.execute(
                 select(OutlierScore).where(OutlierScore.car_id == car.id)
             )
@@ -206,6 +263,7 @@ async def run_detection(db: AsyncSession) -> dict:
                 peer_avg_price=peer_avg,
                 fair_value=int(fair_value) if fair_value is not None else None,
                 method=method,
+                quality_tier=tier,
             )
             if ex:
                 for k, v in vals.items():
