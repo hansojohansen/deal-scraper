@@ -101,14 +101,18 @@ Internet → Nginx (80→443 redirect, 443 SSL)
 
 - HTML selectors for finn.no are in `config.yaml` under `scraper.finn.selectors` — change them there, not in `finn.py`
 - When `scraper/sources/finn.py` returns 0 results, first check `config.yaml` selectors before editing code
+- Price parsing uses `article.get_text(" ", strip=True)` so "640 000 kr" stays as one string across HTML tag boundaries. If finn.no redesigns and prices break, set `selectors.price` in `config.yaml` to a CSS selector string — no code change needed.
 - Always write a `price_history` row when updating a car's price — never update `cars.price` without it
 - Rate limit: 1.2s delay between pages; respect robots.txt
 
 ## Outlier Detection
 
-- Never flag a car as an outlier if `peer_group_size < 5` — prevents false positives on rare models
-- Peer group: same brand+model, year ±2, mileage ±30k km (broadens to brand+model only if group < 5)
-- Threshold: Z-score < -1.5 (and IQR < Q1 - 1.5×IQR as secondary signal)
+Algorithm: **windowed median** (`engine/outlier.py`) — finds same brand+model peers within ±1yr/±25k km (tight) or ±3yr/±50k km (loose fallback), uses their median as fair value. Minimum 3 peers required.
+
+- Deal threshold: price >20% below peer median (`deal_threshold: -0.20` in `config.yaml`)
+- Stale threshold: remove flag when price rises within 5% of median (`stale_threshold: -0.05`)
+- Quality tiers: `excellent` (>25% below + Norwegian reg + valid EU), `good` (default deal), `check` (import or missing EU data), `skip` (price <30k NOK or mileage >400k km)
+- Detection runs automatically at the end of every scraper run — errors are caught and logged, never silent
 
 ## API Design (mobile-ready from day one)
 
