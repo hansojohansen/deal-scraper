@@ -40,6 +40,7 @@ class CarSummaryResponse(BaseModel):
     horsepower: int | None = None
     body_type: str | None = None
     engine_size_cc: int | None = None
+    image_url: str | None = None
     first_seen_at: datetime
     last_seen_at: datetime | None
     outlier_score: OutlierSummary | None = None

@@ -40,9 +40,12 @@ function CarCard({ car }: { car: Car }) {
   return (
     <a href={car.url} target="_blank" rel="noreferrer"
       className="block bg-slate-800 rounded-xl border border-slate-700 hover:border-blue-400 hover:shadow-sm transition-all overflow-hidden">
-      {/* Color header */}
-      <div className={`relative h-[100px] ${brandColor(car.brand)} flex items-center justify-center`}>
-        <span className="text-white text-4xl font-bold opacity-30 select-none">{initial}</span>
+      {/* Color header / image */}
+      <div className={`relative h-[100px] ${car.image_url ? "" : brandColor(car.brand)} flex items-center justify-center overflow-hidden`}>
+        {car.image_url
+          ? <img src={car.image_url} alt={car.title ?? ""} className="w-full h-full object-cover" />
+          : <span className="text-white text-4xl font-bold opacity-30 select-none">{initial}</span>
+        }
         <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
           {car.listing_type === "auction" && (
             <span className="text-xs bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded font-semibold">AUKSJON</span>

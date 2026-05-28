@@ -27,6 +27,7 @@ export interface Car {
   eu_next_deadline: string | null;
   is_norwegian_reg: boolean | null;
   listing_type: string | null;
+  image_url: string | null;
   first_seen_at: string;
   outlier_score: OutlierScore | null;
 }

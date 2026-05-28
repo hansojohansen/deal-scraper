@@ -47,6 +47,7 @@ class Car(Base):
     horsepower: Mapped[int | None] = mapped_column(SmallInteger, index=True)
     body_type: Mapped[str | None] = mapped_column(Text, index=True)
     engine_size_cc: Mapped[int | None] = mapped_column(SmallInteger)
+    image_url: Mapped[str | None] = mapped_column(Text)
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

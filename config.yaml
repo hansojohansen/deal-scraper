@@ -10,18 +10,14 @@
       link: "a.sf-search-ad-link"
 
 outlier:
-  min_peer_group_size: 5        # minimum peers for z-score fallback
-  z_score_threshold: -1.3       # flag if z-score below this
-  z_score_remove_threshold: -0.5  # remove flag if score rises above this
-  iqr_multiplier: 1.5
-  year_range: 2                 # ±2 years for z-score peer group
-  mileage_range: 30000          # ±30k km for z-score peer group
-  ols_min_peers: 8              # minimum peers for OLS regression (primary method)
-  ols_deal_threshold: -0.15     # flag if OLS residual below -15% of fair value
-  log_model: true               # use log-linear price model (captures exponential depreciation)
-  training_filter_low_pct: 0.20 # exclude peers priced below 20% of median (scam filter)
-  training_filter_high_pct: 5.0 # exclude peers priced above 500% of median (outlier filter)
-  min_price_nok: 30000          # skip quality-tier cars below this price (salvage/parts)
+  tight_year_window: 1          # ±1 year for primary peer group
+  tight_mileage_window: 25000   # ±25k km for primary peer group
+  loose_year_window: 3          # ±3 years fallback if tight has <3 peers
+  loose_mileage_window: 50000   # ±50k km fallback
+  min_peers: 3                  # minimum peers required for any detection
+  deal_threshold: -0.20         # flag if price >20% below peer median
+  stale_threshold: -0.05        # remove flag if price within 5% of peer median
+  min_price_nok: 30000          # skip salvage/parts cars below this price
 
 ai:
   batch_size: 5

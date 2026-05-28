@@ -49,6 +49,7 @@ async def upsert_car(db: AsyncSession, item: dict) -> tuple[Car, bool]:
             horsepower=item.get("horsepower"),
             body_type=item.get("body_type"),
             engine_size_cc=item.get("engine_size_cc"),
+            image_url=item.get("image_url"),
             last_seen_at=now,
         )
         db.add(car)
@@ -62,6 +63,8 @@ async def upsert_car(db: AsyncSession, item: dict) -> tuple[Car, bool]:
     else:
         existing.last_seen_at = now
         existing.status = "active"
+        if item.get("image_url") and not existing.image_url:
+            existing.image_url = item["image_url"]
 
         if price is not None and price != existing.price:
             existing.price = price

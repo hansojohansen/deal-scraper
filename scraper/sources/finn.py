@@ -168,6 +168,9 @@ def _normalise(article, selectors: dict) -> dict | None:
             location = t.split("∙")[0].strip()
             break
 
+    img = article.find("img")
+    image_url = img.get("src") if img else None
+
     return {
         "source_id": source_id,
         "url": url,
@@ -184,6 +187,7 @@ def _normalise(article, selectors: dict) -> dict | None:
         "location": location,
         "listing_type": "buy_now",
         "features": {},
+        "image_url": image_url,
     }
 
 
