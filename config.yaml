@@ -16,7 +16,7 @@ outlier:
   iqr_multiplier: 1.5
   year_range: 2                 # ±2 years for z-score peer group
   mileage_range: 30000          # ±30k km for z-score peer group
-  ols_min_peers: 5              # minimum peers for OLS regression (primary method)
+  ols_min_peers: 8              # minimum peers for OLS regression (primary method)
   ols_deal_threshold: -0.15     # flag if OLS residual below -15% of fair value
   log_model: true               # use log-linear price model (captures exponential depreciation)
   training_filter_low_pct: 0.20 # exclude peers priced below 20% of median (scam filter)

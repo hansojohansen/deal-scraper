@@ -123,6 +123,10 @@ def _ols_score(
     if fair_value <= 0:
         return None
 
+    peer_prices = [c.price for c in working_peers]
+    if not (min(peer_prices) * 0.2 <= fair_value <= max(peer_prices) * 3.0):
+        return None
+
     score = (car.price - fair_value) / fair_value
     hp_note = " +hp" if include_hp else ""
     reason = (
