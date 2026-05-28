@@ -30,13 +30,20 @@ def upgrade() -> None:
     for table in PUBLIC_READ_TABLES + SERVICE_ONLY_TABLES:
         conn.execute(text(f"DROP POLICY IF EXISTS allow_all ON {table}"))
 
-    # Public read-only tables: allow SELECT for anon and authenticated roles
-    # No INSERT/UPDATE/DELETE — those only happen via our direct-connection backend
+    # Public read-only tables: allow SELECT.
+    # On Supabase, scope to anon + authenticated; on plain PostgreSQL (CI) those
+    # roles don't exist, so the EXCEPTION branch creates an unscoped policy instead.
     for table in PUBLIC_READ_TABLES:
-        conn.execute(text(
-            f'CREATE POLICY "Public can view {table}" '
-            f"ON {table} FOR SELECT TO anon, authenticated USING (true)"
-        ))
+        conn.execute(text(f"""
+            DO $$
+            BEGIN
+                CREATE POLICY "Public can view {table}"
+                ON {table} FOR SELECT TO anon, authenticated USING (true);
+            EXCEPTION WHEN undefined_object THEN
+                CREATE POLICY "Public can view {table}"
+                ON {table} FOR SELECT USING (true);
+            END $$;
+        """))
 
     # deal_alerts and alert_matches: no public access yet
     # When auth is added (Phase 8), add:
