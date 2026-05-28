@@ -15,6 +15,17 @@
 - **Peer comparison**: Chevron on any deal expands a table of comparable listings sorted by price.
 - **Images**: Scraped from listing card `<img>` tags, stored in `cars.image_url`, shown in listings with letter-avatar fallback.
 - **Alerts**: Email notifications for new deals matching saved filters.
+- **auksjonen.no scraper** (commit `1b729a5`): Fixed. Site is AngularJS client-side rendered so HTML scraping returned nothing. Rewrote to call the site's REST API directly (`GET /api/auctions/search?category=bruktbil`). Returns ~1780 live auction listings per run with title, price, city, auction end time.
+
+---
+
+## Sources
+
+| Source | Status | Notes |
+|--------|--------|-------|
+| finn.no | Working | ~72k listings/run, full detail enrichment |
+| auksjonen.no | Working | ~1780 listings/run via JSON API |
+| nettbil.no | Disabled | B2B dealer platform — requires Autosys dealer credentials, prices always blurred, no public API. Stub returns `[]`. |
 
 ---
 
@@ -39,7 +50,8 @@ GitHub Actions (push to master):
 ## Known Issues / Next Steps
 
 - **Price backfill pending**: Existing cars with `price = NULL` (scraped before the fix) will be backfilled on the next scraper run.
-- **nettbil / auksjonen scrapers**: Both return 0 listings — parsers may need updating.
+- **auksjonen image URLs**: `image_url` is stored as `NULL` for auksjonen listings — the CDN prefix for the `mainImage` field is not yet confirmed. Check a live API response to find the CDN base URL and add it to `auksjonen.py`'s `_normalise()`.
+- **auksjonen mileage**: Not available in the API response — always `NULL`. May be parseable from the title string for some listings (e.g., "2015 Kia Soul EV 118000km").
 
 ---
 
