@@ -1,10 +1,11 @@
-﻿"""Unit tests for the outlier detection engine (no DB required)."""
+"""Unit tests for the outlier detection engine (no DB required)."""
 from unittest.mock import MagicMock
 
-from engine.outlier import _iqr_is_outlier, _peer_group, _reason, _z_score
+from engine.outlier import _windowed_median, _quality_tier
 
 
-def _car(id, brand, model, year, mileage, price):
+def _car(id, brand, model, year, mileage, price,
+         is_norwegian_reg=None, eu_next_deadline=None):
     c = MagicMock()
     c.id = id
     c.brand = brand
@@ -12,6 +13,8 @@ def _car(id, brand, model, year, mileage, price):
     c.year = year
     c.mileage = mileage
     c.price = price
+    c.is_norwegian_reg = is_norwegian_reg
+    c.eu_next_deadline = eu_next_deadline
     return c
 
 
@@ -20,48 +23,73 @@ PEERS = [_car(i, "Toyota", "Corolla", 2018, 80_000, p) for i, p in enumerate([
 ], start=2)]
 
 
-def test_peer_group_tight_window():
+def test_windowed_median_finds_tight_peers():
+    target = _car(1, "Toyota", "Corolla", 2018, 80_000, 200_000)
+    result = _windowed_median(target, [target] + PEERS)
+    assert result is not None
+    peers, fair_value, reason = result
+    assert len(peers) == len(PEERS)
+    assert 295_000 <= fair_value <= 310_000
+    assert "Toyota" in reason
+    assert "Corolla" in reason
+
+
+def test_windowed_median_falls_back_to_loose_window():
+    # Only 1 peer in tight window (year differs by 2) — tight fails, loose succeeds
+    far_peers = [_car(i, "Toyota", "Corolla", 2015, 80_000, 200_000) for i in range(2, 5)]
+    target = _car(1, "Toyota", "Corolla", 2017, 80_000, 100_000)
+    result = _windowed_median(target, [target] + far_peers)
+    assert result is not None
+    _, _, reason = result
+    assert "±3" in reason  # loose window used
+
+
+def test_windowed_median_returns_none_when_no_peers():
+    target = _car(1, "BMW", "M3", 2020, 50_000, 500_000)
+    others = [_car(i, "Toyota", "Corolla", 2020, 50_000, 300_000) for i in range(2, 10)]
+    assert _windowed_median(target, [target] + others) is None
+
+
+def test_windowed_median_returns_none_when_year_missing():
+    target = _car(1, "Toyota", "Corolla", None, 80_000, 200_000)
+    assert _windowed_median(target, [target] + PEERS) is None
+
+
+def test_windowed_median_ignores_peers_without_price():
+    no_price = [_car(i, "Toyota", "Corolla", 2018, 80_000, None) for i in range(2, 10)]
     target = _car(1, "Toyota", "Corolla", 2018, 80_000, 100_000)
-    group = _peer_group(target, [target] + PEERS)
-    assert len(group) == len(PEERS)
-    assert all(c.id != target.id for c in group)
+    assert _windowed_median(target, [target] + no_price) is None
 
 
-def test_peer_group_broadens_when_small():
-    # Only 2 peers in tight window — should broaden
-    sparse = [_car(i, "Toyota", "Corolla", 2010 + i * 5, 200_000 * i, 200_000) for i in range(2)]
-    target = _car(99, "Toyota", "Corolla", 2018, 80_000, 150_000)
-    group = _peer_group(target, [target] + sparse)
-    assert len(group) == len(sparse)
+def test_quality_tier_excellent():
+    car = _car(1, "Toyota", "Corolla", 2022, 30_000, 200_000,
+               is_norwegian_reg=True, eu_next_deadline="2027-01-01")
+    assert _quality_tier(car, -0.30) == "excellent"
 
 
-def test_z_score_outlier():
-    prices = [c.price for c in PEERS]
-    z = _z_score(100_000, prices)
-    assert z < -3, f"Expected strong negative z, got {z}"
+def test_quality_tier_good():
+    car = _car(1, "Toyota", "Corolla", 2022, 30_000, 200_000,
+               is_norwegian_reg=True, eu_next_deadline="2027-01-01")
+    assert _quality_tier(car, -0.22) == "good"
 
 
-def test_z_score_normal():
-    prices = [c.price for c in PEERS]
-    z = _z_score(303_000, prices)
-    assert -1 < z < 1
+def test_quality_tier_check_import():
+    car = _car(1, "Toyota", "Corolla", 2022, 30_000, 200_000, is_norwegian_reg=False)
+    assert _quality_tier(car, -0.30) == "check"
 
 
-def test_z_score_empty():
-    assert _z_score(100_000, []) == 0.0
-    assert _z_score(100_000, [200_000]) == 0.0
+def test_quality_tier_check_no_eu():
+    car = _car(1, "Toyota", "Corolla", 2018, 30_000, 200_000,
+               is_norwegian_reg=True, eu_next_deadline=None)
+    assert _quality_tier(car, -0.30) == "check"
 
 
-def test_iqr_is_outlier():
-    prices = [300_000, 310_000, 295_000, 305_000, 308_000, 302_000]
-    assert _iqr_is_outlier(50_000, prices)
-    assert not _iqr_is_outlier(303_000, prices)
+def test_quality_tier_skip_low_price():
+    car = _car(1, "Toyota", "Corolla", 2018, 30_000, 10_000)
+    assert _quality_tier(car, -0.30) == "skip"
 
 
-def test_reason_format():
-    target = _car(1, "Toyota", "Corolla", 2018, 80_000, 100_000)
-    prices = [c.price for c in PEERS]
-    reason = _reason(target, prices)
-    assert "100,000 NOK" in reason
-    assert "below" in reason
-    assert f"n={len(prices)}" in reason
+def test_quality_tier_skip_high_mileage():
+    car = _car(1, "Toyota", "Corolla", 2018, 500_000, 200_000,
+               is_norwegian_reg=True)
+    assert _quality_tier(car, -0.30) == "skip"
