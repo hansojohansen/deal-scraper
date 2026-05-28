@@ -1,10 +1,9 @@
 ﻿from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict
 
 
 class AlertCreate(BaseModel):
-    notify_email: EmailStr
     brand: str | None = None
     model: str | None = None
     year_min: int | None = None

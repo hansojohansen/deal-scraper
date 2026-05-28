@@ -1,10 +1,12 @@
-﻿from sqlalchemy import select
+﻿import uuid
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.models import AlertMatch, Car, DealAlert, OutlierScore
 
 _ALERT_CREATE_FIELDS = {
-    "notify_email", "brand", "model", "year_min", "year_max",
+    "brand", "model", "year_min", "year_max",
     "price_max", "mileage_max", "fuel_type", "is_active", "min_discount_pct",
 }
 _ALERT_UPDATE_FIELDS = {
@@ -13,9 +15,9 @@ _ALERT_UPDATE_FIELDS = {
 }
 
 
-async def create(db: AsyncSession, data: dict) -> DealAlert:
+async def create(db: AsyncSession, data: dict, user_id: uuid.UUID, notify_email: str) -> DealAlert:
     safe = {k: v for k, v in data.items() if k in _ALERT_CREATE_FIELDS}
-    alert = DealAlert(**safe)
+    alert = DealAlert(**safe, user_id=user_id, notify_email=notify_email)
     db.add(alert)
     await db.flush()
     return alert
@@ -26,8 +28,13 @@ async def get_by_id(db: AsyncSession, alert_id: int) -> DealAlert | None:
     return result.scalar_one_or_none()
 
 
-async def list_active(db: AsyncSession, cursor: int | None = None, limit: int = 20) -> list[DealAlert]:
-    q = select(DealAlert).where(DealAlert.is_active.is_(True))
+async def list_active(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    cursor: int | None = None,
+    limit: int = 20,
+) -> list[DealAlert]:
+    q = select(DealAlert).where(DealAlert.is_active.is_(True), DealAlert.user_id == user_id)
     if cursor:
         q = q.where(DealAlert.id > cursor)
     q = q.order_by(DealAlert.id).limit(limit)

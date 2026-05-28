@@ -30,6 +30,39 @@ def _build_html(car_data: dict, outlier_pct: int | None) -> str:
 """
 
 
+async def send_reset_email(to_email: str, raw_token: str) -> bool:
+    if not settings.smtp_host or not settings.smtp_user:
+        print(f"[email] SMTP not configured — skipping reset email to {to_email}")
+        return False
+    reset_url = f"http://localhost:5173/reset-password?token={raw_token}&email={to_email}"
+    html = f"""
+<html><body style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+  <h2>Reset your password</h2>
+  <p>Click the link below to reset your password. This link expires in 30 minutes.</p>
+  <a href="{reset_url}" style="background:#1d4ed8;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none;display:inline-block;">Reset Password</a>
+  <p style="color:#6b7280;font-size:12px;margin-top:24px;">If you didn't request this, you can ignore this email.</p>
+</body></html>
+"""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Reset your password"
+    msg["From"] = settings.smtp_user
+    msg["To"] = to_email
+    msg.attach(MIMEText(html, "html"))
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname=settings.smtp_host,
+            port=settings.smtp_port,
+            username=settings.smtp_user,
+            password=settings.smtp_password,
+            start_tls=True,
+        )
+        return True
+    except Exception as e:
+        print(f"[email] Failed to send reset email to {to_email}: {e}")
+        return False
+
+
 async def send_alert(to_email: str, car_data: dict, outlier_pct: int | None = None) -> bool:
     if not settings.smtp_host or not settings.smtp_user:
         print(f"[email] SMTP not configured — skipping send to {to_email}")

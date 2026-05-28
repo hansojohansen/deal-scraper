@@ -1,4 +1,5 @@
-﻿from datetime import date, datetime
+﻿import uuid
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -13,13 +14,34 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    email: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
+    hashed_pw: Mapped[str] = mapped_column(Text, nullable=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    verify_token: Mapped[str | None] = mapped_column(Text)
+    reset_token: Mapped[str | None] = mapped_column(Text)
+    reset_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    alerts: Mapped[list["DealAlert"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Car(Base):
@@ -103,6 +125,9 @@ class DealAlert(Base):
     __tablename__ = "deal_alerts"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     notify_email: Mapped[str] = mapped_column(Text, nullable=False)
     brand: Mapped[str | None] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(Text)
@@ -119,6 +144,7 @@ class DealAlert(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
+    user: Mapped["User"] = relationship(back_populates="alerts")
     matches: Mapped[list["AlertMatch"]] = relationship(
         back_populates="alert", cascade="all, delete-orphan"
     )
