@@ -3,12 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { LayoutGrid, LayoutList, ExternalLink, ArrowUpDown } from "lucide-react";
 import { api, type Outlier } from "../api/client";
 
-const SOURCE_STYLE: Record<string, string> = {
-  "finn.no": "bg-blue-100 text-amber-400",
-  nettbil: "bg-purple-900/40 text-purple-400",
-  auksjonen: "bg-amber-900/40 text-amber-400",
-};
-
 const TIER_STYLE: Record<string, { label: string; cls: string }> = {
   excellent: { label: "Topp",  cls: "bg-emerald-900/50 text-emerald-400 border border-emerald-700" },
   good:      { label: "God",   cls: "bg-blue-900/50 text-blue-400 border border-blue-700" },
