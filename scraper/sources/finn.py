@@ -21,6 +21,14 @@ _USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
 ]
 
+_FUEL_TYPES = {
+    "bensin", "diesel", "hybrid bensin", "hybrid diesel",
+    "plug-in hybrid bensin", "plug-in hybrid diesel",
+    "elektrisk", "hydrogengass", "lpg", "plug-in hybrid",
+}
+
+_TRANSMISSIONS = {"automat", "manuell", "direktegir"}
+
 _BODY_TYPE_MAP = {
     "sedan": "sedan",
     "suv": "suv",
@@ -50,6 +58,7 @@ def _parse_metadata(line: str) -> dict:
     parts = [p.strip() for p in line.split("∙")]
     for i, part in enumerate(parts):
         part_clean = part.replace("\xa0", "").replace(" ", "").strip()
+        part_lower = part.strip().lower()
 
         if i == 0 and re.match(r"^\d{4}$", part_clean):
             result["year"] = int(part_clean)
@@ -62,17 +71,21 @@ def _parse_metadata(line: str) -> dict:
         elif re.search(r"\d+\s*kW", part, re.IGNORECASE):
             m = re.search(r"(\d+)\s*kW", part, re.IGNORECASE)
             if m:
-                result["horsepower"] = round(int(m.group(1)) * 1.341)
+                hp = round(int(m.group(1)) * 1.341)
+                if 1 <= hp <= 2000:
+                    result["horsepower"] = hp
 
         elif re.search(r"\d+\s*hk", part, re.IGNORECASE):
             m = re.search(r"(\d+)\s*hk", part, re.IGNORECASE)
             if m:
-                result["horsepower"] = int(m.group(1))
+                hp = int(m.group(1))
+                if 1 <= hp <= 2000:
+                    result["horsepower"] = hp
 
-        elif i >= 2 and result["fuel_type"] is None and "km" not in part_clean:
+        elif part_lower in _FUEL_TYPES:
             result["fuel_type"] = part.strip()
 
-        elif i >= 3 and result["transmission"] is None and "km" not in part_clean:
+        elif part_lower in _TRANSMISSIONS:
             result["transmission"] = part.strip()
 
     return result
@@ -115,9 +128,9 @@ def _parse_norwegian_date(s: str) -> date | None:
     return None
 
 
-def _normalise(article) -> dict | None:
+def _normalise(article, selectors: dict) -> dict | None:
     """Extract canonical fields from a BeautifulSoup article element."""
-    link = article.find("a", class_="sf-search-ad-link")
+    link = article.select_one(selectors["link"])
     if not link:
         return None
 
@@ -183,11 +196,12 @@ def fetch_page(page: int, session: requests.Session, config: dict) -> list[dict]
     resp.raise_for_status()
 
     soup = BeautifulSoup(resp.text, "lxml")
-    articles = soup.find_all("article", class_="sf-search-ad")
+    selectors = config["selectors"]
+    articles = soup.select(selectors["result_list"])
 
     results = []
     for article in articles:
-        item = _normalise(article)
+        item = _normalise(article, selectors)
         if item:
             results.append(item)
 

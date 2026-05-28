@@ -6,13 +6,8 @@
     user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     # Update these selectors when finn.no changes their HTML (no code change needed)
     selectors:
-      result_list: "article[data-testid='result-item'], div[data-testid='search-result']"
-      title: "[data-testid='heading'], h2.sf-search-ad-link"
-      price: "[data-testid='price'], .u-t3"
-      mileage: "[data-testid='km'], .u-caption"
-      year: "[data-testid='year']"
-      location: "[data-testid='location']"
-      next_page: "[data-testid='pagination-next'], a[rel='next']"
+      result_list: "article.sf-search-ad"
+      link: "a.sf-search-ad-link"
 
 outlier:
   min_peer_group_size: 5        # minimum peers for z-score fallback
