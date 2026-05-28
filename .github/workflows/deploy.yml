@@ -27,13 +27,10 @@ jobs:
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Copy frontend dist to droplet
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key_path: ~/.ssh/deploy_key
-          source: "frontend/dist/"
-          target: "/home/deploy/deal-scraper/frontend/"
+        run: |
+          scp -i ~/.ssh/deploy_key -r -o StrictHostKeyChecking=no \
+            frontend/dist/ \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/home/deploy/deal-scraper/frontend/
 
       - name: Deploy backend
         uses: appleboy/ssh-action@v1

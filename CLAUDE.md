@@ -17,6 +17,7 @@ GitHub: https://github.com/hansojohansen/deal-scraper
 - **Frontend**: React + Vite + TanStack Query + Tailwind CSS + Recharts
 - **Scheduling**: GitHub Actions cron (every 6h)
 - **Dependencies**: managed with `uv`; venv at `.venv/`
+- **Deployment**: Docker Compose on DigitalOcean droplet (Ubuntu 24.04); Nginx reverse proxy with Let's Encrypt HTTPS
 
 ## Running the project
 
@@ -60,11 +61,41 @@ Commit prefix conventions:
 - `test:` tests only
 - `docs:` documentation
 
+## Deployment
+
+Push to `master` triggers GitHub Actions auto-deploy:
+1. Builds frontend (`npm ci && npm run build`) in CI
+2. SCPs `frontend/dist/` to droplet at `/home/deploy/deal-scraper/frontend/`
+3. SSHes to droplet: `git pull` → `alembic upgrade head` → `docker compose up -d --build`
+
+**Droplet**: DigitalOcean Ubuntu 24.04. App lives at `/home/deploy/deal-scraper`. The `deploy` user runs Docker.
+
+**Required GitHub Secrets**: `DEPLOY_HOST` (droplet IP), `DEPLOY_USER` (`deploy`), `DEPLOY_SSH_KEY` (ed25519 private key — must match a public key in `/home/deploy/.ssh/authorized_keys`).
+
+**SSL**: Let's Encrypt certs at `/etc/letsencrypt/live/<domain>/`. Update `nginx/nginx.conf` with the real domain name when issuing the cert.
+
+**Architecture**:
+```
+Internet → Nginx (80→443 redirect, 443 SSL)
+              ├── /        → frontend/dist/ (static React SPA)
+              ├── /api/*   → backend:8000 (FastAPI)
+              └── /health  → backend:8000/health
+```
+
+**First deploy checklist** (one-time manual steps):
+1. Clone repo to `/home/deploy/deal-scraper`
+2. Create `.env` with `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`
+3. Point domain DNS A record at droplet IP
+4. Run `certbot certonly --standalone -d yourdomain.com` (stop nginx first)
+5. Update `nginx/nginx.conf` `ssl_certificate` paths with real domain
+6. `docker compose up -d`
+
 ## Environment
 
 - Secrets in `.env` (gitignored). Copy `.env.example` to `.env` to get started.
 - `DATABASE_URL` must use `postgresql+asyncpg://` prefix for the app; alembic swaps to `psycopg2` automatically
 - `GEMINI_API_KEY` is optional — scraper runs without AI enrichment if absent
+- Never commit `.env` — production secrets stay on the server only
 
 ## Scraping Guidelines
 
