@@ -91,19 +91,13 @@ def _parse_metadata(line: str) -> dict:
     return result
 
 
-def _parse_price(texts: list[str]) -> int | None:
-    """Extract price in NOK from the text list. Price precedes 'kr'."""
-    for i, t in enumerate(texts):
-        if t.strip() == "kr" and i > 0:
-            price_str = re.sub(r"[^\d]", "", texts[i - 1])
-            if price_str:
-                return int(price_str)
-    for t in texts:
-        m = re.search(r"([\d\s\xa0]+)\s*kr", t)
-        if m:
-            price_str = re.sub(r"[^\d]", "", m.group(1))
-            if price_str and len(price_str) >= 4:
-                return int(price_str)
+def _parse_price(text: str) -> int | None:
+    """Extract NOK price from the full text of a listing card."""
+    m = re.search(r"([\d\s\xa0]{3,})\s*kr", text)
+    if m:
+        price_str = re.sub(r"[^\d]", "", m.group(1))
+        if len(price_str) >= 4:
+            return int(price_str)
     return None
 
 
@@ -160,7 +154,12 @@ def _normalise(article, selectors: dict) -> dict | None:
             break
 
     meta = _parse_metadata(meta_line)
-    price = _parse_price(texts)
+    price_sel = selectors.get("price")
+    if price_sel:
+        el = article.select_one(price_sel)
+        price = _parse_price(el.get_text(" ", strip=True)) if el else None
+    else:
+        price = _parse_price(article.get_text(" ", strip=True))
 
     location = None
     for t in texts:

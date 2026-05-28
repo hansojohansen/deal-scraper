@@ -285,11 +285,15 @@ async def run(dry_run: bool = False, max_pages: int = 9999, enrich_details: bool
         summary["enriched"] = enrich_result
 
     # --- DETECT outliers ---
-    from engine.outlier import run_detection
-    async with session_factory() as db:
-        detection = await run_detection(db)
-    summary["detection"] = detection
-    print(f"[scraper] Detection: {detection['upserted']} outliers flagged, {detection['removed']} removed")
+    try:
+        from engine.outlier import run_detection
+        async with session_factory() as db:
+            detection = await run_detection(db)
+        summary["detection"] = detection
+        print(f"[scraper] Detection: {detection['upserted']} outliers flagged, {detection['removed']} removed")
+    except Exception as exc:
+        print(f"[scraper] Detection failed: {exc}")
+        summary["detection_error"] = str(exc)
 
     # --- DISPATCH alerts ---
     from agents.alert_agent import run as dispatch_alerts

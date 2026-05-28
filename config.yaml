@@ -8,6 +8,7 @@
     selectors:
       result_list: "article.sf-search-ad"
       link: "a.sf-search-ad-link"
+      price: null    # set to a CSS selector if finn.no redesigns and regex breaks
 
 outlier:
   tight_year_window: 1          # ±1 year for primary peer group
