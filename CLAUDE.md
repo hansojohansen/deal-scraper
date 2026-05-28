@@ -28,10 +28,10 @@ uv pip install -e ".[dev]"
 # Run DB migrations (requires .env with DATABASE_URL)
 alembic upgrade head
 
-# Start backend
-uvicorn backend.main:app --reload
+# Start backend — use port 8080 locally (port 8000 has a stuck phantom process on the dev machine)
+uvicorn backend.main:app --port 8080 --reload
 
-# Start frontend
+# Start frontend (Vite proxies /api to localhost:8080)
 cd frontend && npm install && npm run dev
 
 # Run scraper manually
@@ -44,6 +44,19 @@ pytest
 # Lint
 ruff check .
 ```
+
+## Auth System
+
+Full JWT auth is implemented. Key files:
+
+- `backend/security.py` — `hash_password`, `verify_password`, `create_access_token`, `decode_access_token`, `generate_reset_token`, `hash_reset_token`, `verify_reset_token`. Uses `bcrypt` package directly — **do not use `passlib`**, it is incompatible with bcrypt 5.x (its `detect_wrap_bug()` test sends a >72-byte password which bcrypt 5.x rejects with ValueError).
+- `backend/api/routes/auth.py` — `/api/v1/auth/{register,login,forgot-password,reset-password,me}`
+- `backend/db/crud/users.py` — async CRUD for `users` table
+- `backend/dependencies.py` — `get_current_user`, `get_current_user_optional` (HTTPBearer)
+- `frontend/src/contexts/AuthContext.tsx` — JWT stored in `localStorage`; auto-injects `Authorization: Bearer` header
+- `frontend/src/components/ProtectedRoute.tsx` — redirects to `/login` with `state.next` if unauthenticated
+
+Alerts require auth. Users see only their own alerts (filtered by `user_id`).
 
 ## Git Workflow
 
@@ -82,19 +95,19 @@ Internet → Nginx (80→443 redirect, 443 SSL)
               └── /health  → backend:8000/health
 ```
 
-**First deploy checklist** (one-time manual steps):
-1. Clone repo to `/home/deploy/deal-scraper`
-2. Create `.env` with `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`
-3. Point domain DNS A record at droplet IP
-4. Run `certbot certonly --standalone -d yourdomain.com` (stop nginx first)
-5. Update `nginx/nginx.conf` `ssl_certificate` paths with real domain
-6. `docker compose up -d`
+**Before redeploying** — add to production `.env`:
+```
+JWT_SECRET=<strong-random-secret>
+ACCESS_TOKEN_EXPIRE_HOURS=24
+CORS_ORIGINS=["https://giscademy.com"]
+```
 
 ## Environment
 
 - Secrets in `.env` (gitignored). Copy `.env.example` to `.env` to get started.
 - `DATABASE_URL` must use `postgresql+asyncpg://` prefix for the app; alembic swaps to `psycopg2` automatically
 - `GEMINI_API_KEY` is optional — scraper runs without AI enrichment if absent
+- `SMTP_HOST` / `SMTP_USER` / `SMTP_PASSWORD` — optional; forgot-password silently skips email if unset
 - Never commit `.env` — production secrets stay on the server only
 
 ## Scraping Guidelines
