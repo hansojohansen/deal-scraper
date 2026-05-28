@@ -20,12 +20,12 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv pip install -e ".[dev]" --system
+        run: uv sync --extra dev
 
       - name: Run migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: alembic upgrade head
+        run: uv run alembic upgrade head
 
       - name: Run scraper + detection + alerts
         env:
@@ -35,7 +35,7 @@ jobs:
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-        run: python -m scraper.main
+        run: uv run python -m scraper.main
 
       - name: Commit feedback.json
         run: |

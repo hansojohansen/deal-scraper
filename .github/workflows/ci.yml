@@ -37,19 +37,19 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv pip install -e ".[dev]" --system
+        run: uv sync --extra dev
 
       - name: Lint
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Run migrations
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_deal_scraper
-        run: alembic upgrade head
+        run: uv run alembic upgrade head
 
       - name: Run tests
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_deal_scraper
           JWT_SECRET: ci-test-secret
           CORS_ORIGINS: '["http://localhost:5173"]'
-        run: pytest --cov=backend --cov=engine --cov=scraper --cov-report=term-missing -q
+        run: uv run pytest --cov=backend --cov=engine --cov=scraper --cov-report=term-missing -q
