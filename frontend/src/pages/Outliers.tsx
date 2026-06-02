@@ -160,7 +160,7 @@ export default function Outliers() {
     );
   }
 
-  if (isLoading) return <p className="text-slate-400">Loading…</p>;
+  if (isLoading) return <p className="text-slate-400">Laster…</p>;
 
   return (
     <div className="space-y-4">

@@ -63,13 +63,13 @@ function ScoreChipBadges({ chips }: { chips: Car["score_chips"] }) {
   if (!chips || chips.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1 pt-0.5">
-      {chips.map((c, i) => {
+      {chips.map((c) => {
         const cls =
           c.type === "green" ? "bg-green-900/50 text-green-400" :
           c.type === "red"   ? "bg-red-900/50 text-red-400" :
                                "bg-slate-700 text-slate-400";
         return (
-          <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}>{c.label}</span>
+          <span key={c.label} className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}>{c.label}</span>
         );
       })}
     </div>
@@ -154,14 +154,20 @@ function CarCard({ car, savedIds, onToggleSave }: {
                 className={isSaved ? "text-rose-400 fill-rose-400" : "text-slate-500"}
               />
             </button>
-            <a
-              href={`/compare?ids=${car.id}`}
-              title="Sammenlign"
+            <button
+              title="Legg til sammenligning"
               className="p-1 rounded hover:bg-slate-700 transition-colors text-slate-500 hover:text-amber-400"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                const existing = (sessionStorage.getItem("compare_ids") ?? "").split(",").filter(Boolean);
+                if (!existing.includes(String(car.id))) existing.push(String(car.id));
+                const ids = existing.slice(-4).join(",");
+                sessionStorage.setItem("compare_ids", ids);
+                window.open(`/compare?ids=${ids}`, "_blank");
+              }}
             >
               <Plus size={15} />
-            </a>
+            </button>
           </div>
         </div>
       </div>
@@ -191,6 +197,7 @@ export default function Listings() {
   const [sort, setSort] = useState<SortMode>("newest");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
+  const [toast, setToast] = useState<string | null>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
 
   // Populate savedIds from watchlist on mount if authenticated
@@ -213,12 +220,13 @@ export default function Listings() {
       if (alreadySaved) await api.removeFromWatchlist(car.id);
       else await api.addToWatchlist(car.id);
     } catch {
-      // Revert optimistic update
       setSavedIds((prev) => {
         const next = new Set(prev);
         if (alreadySaved) next.add(car.id); else next.delete(car.id);
         return next;
       });
+      setToast(alreadySaved ? "Kunne ikke fjerne fra lagret" : "Kunne ikke lagre bilen");
+      setTimeout(() => setToast(null), 3000);
     }
   }
 
@@ -448,6 +456,11 @@ export default function Listings() {
 
   return (
     <div className="flex gap-6">
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-700 text-slate-100 px-4 py-2 rounded-lg shadow-lg z-50 text-sm">
+          {toast}
+        </div>
+      )}
       {/* Desktop filter sidebar */}
       <aside className="hidden lg:block w-[260px] shrink-0">
         <div className="bg-slate-800 rounded-xl border border-slate-700 p-4 sticky top-4">

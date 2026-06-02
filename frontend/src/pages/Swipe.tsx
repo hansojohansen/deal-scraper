@@ -12,7 +12,7 @@ function ScoreChips({ chips }: { chips: ScoreChip[] }) {
         const cls = c.type === "green" ? "bg-green-900/50 text-green-400"
           : c.type === "red" ? "bg-red-900/50 text-red-400"
           : "bg-slate-700 text-slate-400";
-        return <span key={i} className={`text-[10px] px-2 py-0.5 rounded ${cls}`}>{c.label}</span>;
+        return <span key={c.label} className={`text-[10px] px-2 py-0.5 rounded ${cls}`}>{c.label}</span>;
       })}
     </div>
   );

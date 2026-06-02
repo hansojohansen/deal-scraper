@@ -13,7 +13,7 @@ function WatchlistCard({ car }: { car: Car }) {
         <img src={car.image_url} alt={car.title ?? ""} className="w-full h-[120px] object-cover" />
       ) : (
         <div className="h-[120px] bg-slate-700 flex items-center justify-center">
-          <span className="text-4xl font-bold text-slate-600 select-none">{(car.brand ?? "?")[0].toUpperCase()}</span>
+          <span className="text-4xl font-bold text-slate-600 select-none">{(car.brand?.trim() || "?")[0].toUpperCase()}</span>
         </div>
       )}
       <div className="p-3 space-y-1.5 flex-1 flex flex-col">
@@ -24,11 +24,11 @@ function WatchlistCard({ car }: { car: Car }) {
         </p>
         {car.score_chips && car.score_chips.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {car.score_chips.map((c, i) => {
+            {car.score_chips.map((c) => {
               const cls = c.type === "green" ? "bg-green-900/50 text-green-400" :
                           c.type === "red"   ? "bg-red-900/50 text-red-400" :
                                                "bg-slate-700 text-slate-400";
-              return <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}>{c.label}</span>;
+              return <span key={c.label} className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}>{c.label}</span>;
             })}
           </div>
         )}

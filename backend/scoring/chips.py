@@ -55,7 +55,7 @@ def compute_score_chips(car: "Car", outlier: "OutlierScore | None") -> list[dict
     if signals.get("has_new_tires") is True:
         chips.append({"label": "Nye dekk", "type": "green"})
     if signals.get("has_accident_history") is True:
-        chips.append({"label": "Uhellsskade", "type": "red"})
+        chips.append({"label": "Ulykke registrert", "type": "red"})
     if signals.get("has_rust") is True:
         chips.append({"label": "Rust registrert", "type": "red"})
 
