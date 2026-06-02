@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.config import settings
 from backend.db.crud import users as users_crud
 from backend.dependencies import get_current_user, get_db
-from notifications.email import send_reset_email
 from backend.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
@@ -23,6 +22,7 @@ from backend.security import (
     verify_password,
     verify_reset_token,
 )
+from notifications.email import send_reset_email
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -51,7 +51,7 @@ async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depend
     user = await users_crud.get_by_email(db, body.email)
     if user:
         raw = generate_reset_token()
-        expires = datetime.now(timezone.utc) + timedelta(
+        expires = datetime.now(UTC) + timedelta(
             minutes=settings.password_reset_expire_minutes
         )
         await users_crud.set_reset_token(db, user, hash_reset_token(raw), expires)
@@ -68,7 +68,7 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
     user = await users_crud.get_by_email(db, body.email)
     if not user or not user.reset_token or not user.reset_expires_at:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
-    if datetime.now(timezone.utc) > user.reset_expires_at:
+    if datetime.now(UTC) > user.reset_expires_at:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
     if not verify_reset_token(body.token, user.reset_token):
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")

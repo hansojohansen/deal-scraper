@@ -1,6 +1,6 @@
 """JWT creation/decoding and password hashing utilities."""
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from fastapi import HTTPException
@@ -21,7 +21,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(user_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=settings.access_token_expire_hours)
+    expire = datetime.now(UTC) + timedelta(hours=settings.access_token_expire_hours)
     payload = {"sub": user_id, "exp": expire}
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 

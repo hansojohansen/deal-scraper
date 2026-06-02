@@ -5,7 +5,7 @@ API: GET /api/auctions/search?category=bruktbil&limit=100&offset=N
 """
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import requests
 
@@ -82,7 +82,7 @@ def _normalise(item: dict) -> dict | None:
     features: dict = {}
     end_ts = item.get("endTime")
     if end_ts:
-        features["auction_end"] = datetime.fromtimestamp(end_ts / 1000, tz=timezone.utc).isoformat()
+        features["auction_end"] = datetime.fromtimestamp(end_ts / 1000, tz=UTC).isoformat()
 
     return {
         "source_id": source_id,
