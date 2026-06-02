@@ -1,16 +1,26 @@
+_DEFAULT_MAX_PRICE = 3_000_000
+
+
 def is_relevant(item: dict, config: dict | None = None) -> bool:
-    """Pre-filter listings before AI enrichment. Fast rule-based check."""
-    # Must have a URL and source_id
+    """Pre-filter listings before storage. Fast rule-based check."""
     if not item.get("url") or not item.get("source_id"):
         return False
 
-    # Must have a price (unparseable prices are skipped)
+    # Drop leasing listings — their monthly price (e.g. 3 500 kr/mnd) is
+    # misread as a purchase price, making them look like massive deals.
+    if item.get("listing_type") == "lease":
+        return False
+
     if item.get("price") is None:
         return False
 
-    # Sanity bounds on price (under 1 kr or over 10M NOK is likely a parse error)
     price = item["price"]
-    if price < 1 or price > 10_000_000:
+    max_price = _DEFAULT_MAX_PRICE
+    if config:
+        max_price = config.get("max_price_nok", _DEFAULT_MAX_PRICE)
+
+    # Hard sanity bounds — under 1 kr or over max is a parse error
+    if price < 1 or price > max_price:
         return False
 
     if config:

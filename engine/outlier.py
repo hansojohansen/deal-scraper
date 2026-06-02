@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.models import Car, OutlierScore, PriceHistory
 
 _cfg = yaml.safe_load(Path("config.yaml").read_text())["outlier"]
+_filter_cfg = yaml.safe_load(Path("config.yaml").read_text()).get("filter", {})
 TIGHT_YEAR_WINDOW: int = _cfg["tight_year_window"]
 TIGHT_MILEAGE_WINDOW: int = _cfg["tight_mileage_window"]
 LOOSE_YEAR_WINDOW: int = _cfg["loose_year_window"]
@@ -32,6 +33,7 @@ MIN_PEERS: int = _cfg["min_peers"]
 DEAL_THRESHOLD: float = _cfg["deal_threshold"]
 STALE_THRESHOLD: float = _cfg["stale_threshold"]
 MIN_PRICE_NOK: int = _cfg["min_price_nok"]
+MAX_PRICE_NOK: int = _filter_cfg.get("max_price_nok", 3_000_000)
 
 _CURRENT_YEAR: int = date.today().year
 
@@ -115,6 +117,10 @@ def _quality_tier(car: "Car", score: float) -> str:
     good      — default for any genuine priced-below-market listing
     """
     if car.price and car.price < MIN_PRICE_NOK:
+        return "skip"
+    if car.price and car.price > MAX_PRICE_NOK:
+        return "skip"
+    if car.listing_type == "lease":
         return "skip"
     if car.mileage and car.mileage > 400_000:
         return "skip"

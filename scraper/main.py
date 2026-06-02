@@ -383,12 +383,65 @@ def _update_feedback(summary: dict) -> None:
         print(f"[scraper] Could not update feedback.json: {e}")
 
 
+async def _cleanup_prices() -> dict:
+    """
+    Remove bad data from the DB:
+    - Outlier scores for lease-priced cars (price < 20k NOK — monthly rates misread as purchase)
+    - Cars priced above 3M NOK marked as removed (parse errors, not real prices)
+    Then re-runs outlier detection on the cleaned dataset.
+    """
+    from sqlalchemy import text
+
+    from backend.db.session import session_factory
+
+    config = _load_config()
+    max_price = config.get("filter", {}).get("max_price_nok", 3_000_000)
+
+    async with session_factory() as db:
+        r1 = await db.execute(
+            text("DELETE FROM outlier_scores WHERE car_id IN (SELECT id FROM cars WHERE price < 20000)")
+        )
+        r2 = await db.execute(
+            text(f"UPDATE cars SET status = 'removed' WHERE price > {max_price}")
+        )
+        r3 = await db.execute(
+            text(f"DELETE FROM outlier_scores WHERE car_id IN (SELECT id FROM cars WHERE price > {max_price})")
+        )
+        await db.commit()
+
+    removed_scores = r1.rowcount
+    marked_removed = r2.rowcount
+    removed_high_scores = r3.rowcount
+    print(f"[cleanup] Removed {removed_scores} outlier scores for lease-priced cars (price < 20k)")
+    print(f"[cleanup] Marked {marked_removed} cars as removed (price > {max_price:,})")
+    print(f"[cleanup] Removed {removed_high_scores} outlier scores for high-price cars")
+
+    print("[cleanup] Re-running outlier detection on cleaned dataset...")
+    from engine.outlier import run_detection
+    async with session_factory() as db:
+        detection = await run_detection(db)
+    print(f"[cleanup] Detection: {detection['upserted']} deals flagged, {detection['removed']} removed")
+
+    return {
+        "removed_lease_scores": removed_scores,
+        "marked_removed": marked_removed,
+        "removed_high_price_scores": removed_high_scores,
+        "detection": detection,
+    }
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Car scraper — finn.no, nettbil, auksjonen")
     parser.add_argument("--dry-run", action="store_true", help="Fetch but don't write to DB")
     parser.add_argument("--max-pages", type=int, default=9999, help="Max pages per source (50 cars/page). Default: all pages.")
     parser.add_argument("--enrich-details", action="store_true", help="Fetch finn.no detail pages for EU/reg/hp data")
+    parser.add_argument("--cleanup-prices", action="store_true", help="Remove leasing/impossible-price cars and re-run detection")
     args = parser.parse_args()
+
+    if args.cleanup_prices:
+        result = asyncio.run(_cleanup_prices())
+        print(f"\n[cleanup] Done: {result['marked_removed']} cars removed, {result['removed_lease_scores']} bad scores deleted")
+        sys.exit(0)
 
     result = asyncio.run(run(dry_run=args.dry_run, max_pages=args.max_pages, enrich_details=args.enrich_details))
     print(f"\n[scraper] Done: {result['new']} new, {result['updated']} updated, {len(result['errors'])} errors")

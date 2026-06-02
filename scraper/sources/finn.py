@@ -91,9 +91,24 @@ def _parse_metadata(line: str) -> dict:
     return result
 
 
+_LEASE_PATTERNS = re.compile(
+    r"kr\s*/\s*m(nd|åned|d)\b|leasing|leasingpris|leasingbil|per\s+m(åned|nd)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_leasing_card(text: str) -> bool:
+    return bool(_LEASE_PATTERNS.search(text))
+
+
 def _parse_price(text: str) -> int | None:
-    """Extract NOK price from the full text of a listing card."""
-    m = re.search(r"([\d\s\xa0]{3,})\s*kr", text)
+    """Extract NOK purchase price from a listing card.
+    Returns None for leasing cards (monthly price would be misread as purchase price).
+    """
+    if _is_leasing_card(text):
+        return None
+    # Negative lookahead: reject "kr/mnd" and "kr/måned" matches
+    m = re.search(r"([\d\s\xa0]{3,})\s*kr(?!\s*/\s*m)", text)
     if m:
         price_str = re.sub(r"[^\d]", "", m.group(1))
         if len(price_str) >= 4:
@@ -170,6 +185,9 @@ def _normalise(article, selectors: dict) -> dict | None:
     img = article.find("img")
     image_url = img.get("src") if img else None
 
+    card_text = article.get_text(" ", strip=True)
+    listing_type = "lease" if _is_leasing_card(card_text) else "buy_now"
+
     return {
         "source_id": source_id,
         "url": url,
@@ -184,7 +202,7 @@ def _normalise(article, selectors: dict) -> dict | None:
         "horsepower": meta["horsepower"],
         "price": price,
         "location": location,
-        "listing_type": "buy_now",
+        "listing_type": listing_type,
         "features": {},
         "image_url": image_url,
     }

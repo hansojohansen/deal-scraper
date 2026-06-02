@@ -29,5 +29,8 @@ ai:
     - gemini-2.5-flash
     - gemini-flash-lite-latest
 
+filter:
+  max_price_nok: 3000000       # reject listings above this (30M+ is a parse error, real ceiling ~3M)
+
 notifications:
   alert_cooldown_hours: 24     # don't re-notify on same car within this window
