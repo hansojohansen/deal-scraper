@@ -11,6 +11,7 @@ import requests
 
 API_URL = "https://www.auksjonen.no/api/auctions/search"
 LISTING_BASE = "https://www.auksjonen.no/auksjon"
+IMAGE_BASE = "https://www.auksjonen.no/api/img"
 PAGE_SIZE = 100
 DELAY = 1.5
 
@@ -99,7 +100,7 @@ def _normalise(item: dict) -> dict | None:
         "location": item.get("city") or None,
         "listing_type": listing_type,
         "features": features,
-        "image_url": None,
+        "image_url": f"{IMAGE_BASE}/{object_id}/{item['mainImage']}" if item.get("mainImage") else None,
     }
 
 
