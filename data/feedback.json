@@ -7,6 +7,20 @@
       "updated": 0,
       "pages": 5,
       "errors": 0
+    },
+    {
+      "at": "2026-05-27T16:44:41.772474+00:00",
+      "new": 150,
+      "updated": 0,
+      "pages": 3,
+      "errors": 0
+    },
+    {
+      "at": "2026-06-02T15:39:38.640344+00:00",
+      "new": 41,
+      "updated": 2099,
+      "pages": 0,
+      "errors": 0
     }
   ],
   "instincts": []
