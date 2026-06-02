@@ -12,6 +12,7 @@ from backend.schemas.car import (
     CursorPage,
     PricePointResponse,
 )
+from backend.scoring.chips import compute_score_chips
 
 router = APIRouter(prefix="/api/v1/cars", tags=["cars"])
 
@@ -41,6 +42,7 @@ async def list_cars(
     is_norwegian_reg: bool | None = None,
     has_service_history: bool | None = None,
     accident_free: bool | None = None,
+    monthly_cost_max: int | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     q = select(Car).options(selectinload(Car.outlier_score)).where(Car.status == "active")
@@ -90,11 +92,18 @@ async def list_cars(
         q = q.where(Car.condition_signals["has_service_history"].as_boolean().is_(True))
     if accident_free is True:
         q = q.where(Car.condition_signals["has_accident_history"].as_boolean().is_(False))
+    if monthly_cost_max is not None:
+        q = q.where(Car.price <= monthly_cost_max * 60)
     q = q.order_by(Car.id).limit(pagination.limit + 1)
     result = await db.execute(q)
-    cars = list(result.scalars())
-    next_cursor = cars[-1].id if len(cars) > pagination.limit else None
-    return CursorPage(items=cars[:pagination.limit], next_cursor=next_cursor)
+    raw_cars = list(result.scalars())
+    next_cursor = raw_cars[-1].id if len(raw_cars) > pagination.limit else None
+    items = []
+    for car in raw_cars[:pagination.limit]:
+        item = CarSummaryResponse.model_validate(car)
+        item.score_chips = compute_score_chips(car, car.outlier_score)
+        items.append(item)
+    return CursorPage(items=items, next_cursor=next_cursor)
 
 
 @router.get("/brands/{brand}/models", response_model=list[str])
@@ -116,7 +125,9 @@ async def get_car(car_id: int, db: AsyncSession = Depends(get_db)):
     car = result.scalar_one_or_none()
     if not car:
         raise ApiError(code="not_found", message="Car not found", status=404)
-    return car
+    item = CarDetailResponse.model_validate(car)
+    item.score_chips = compute_score_chips(car, car.outlier_score)
+    return item
 
 
 @router.get("/{car_id}/price-history", response_model=list[PricePointResponse])

@@ -6,6 +6,7 @@ from backend.db.crud import outliers as outlier_crud
 from backend.db.models import Car
 from backend.dependencies import get_db
 from backend.schemas.outlier import OutlierResponse, PeerCarResponse
+from backend.scoring.chips import compute_score_chips
 
 router = APIRouter(prefix="/api/v1/outliers", tags=["outliers"])
 
@@ -28,6 +29,7 @@ async def list_outliers(
             brand=car.brand, model=car.model, year=car.year,
             mileage=car.mileage, price=car.price, url=car.url, title=car.title,
             fair_value=outlier.fair_value, method=outlier.method, quality_tier=outlier.quality_tier,
+            score_chips=compute_score_chips(car, outlier),
         ))
     return result
 

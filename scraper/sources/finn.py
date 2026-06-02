@@ -311,6 +311,11 @@ def fetch_detail(url: str, session: requests.Session, delay: float = 1.2) -> dic
             if cc_str:
                 result["engine_size_cc"] = int(cc_str)
 
+        elif "registreringsnummer" in label:
+            clean = re.sub(r"\s+", "", value).upper()
+            if clean:
+                result["reg_number"] = clean
+
         elif label.strip() == "farge":
             result["color"] = value
 

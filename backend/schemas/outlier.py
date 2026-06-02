@@ -36,3 +36,4 @@ class OutlierResponse(BaseModel):
     fair_value: int | None = None
     method: str | None = None
     quality_tier: str | None = None
+    score_chips: list[dict] = []

@@ -168,6 +168,90 @@ async def _enrich_descriptions(max_cars: int = 100) -> dict:
     return {"enriched": enriched, "skipped": skipped, "errors": errors}
 
 
+async def _enrich_vegvesen(max_cars: int = 200) -> dict:
+    """Fetch first registration date from Statens vegvesen for cars with a reg_number."""
+    from sqlalchemy import select, update
+
+    from backend.db.models import Car
+    from backend.db.session import session_factory
+    from scraper.vegvesen import enrich_vegvesen
+
+    enriched = 0
+    errors = 0
+
+    async with session_factory() as db:
+        result = await db.execute(
+            select(Car.id, Car.reg_number)
+            .where(
+                Car.reg_number.is_not(None),
+                Car.first_reg_date.is_(None),
+                Car.status == "active",
+            )
+            .limit(max_cars)
+        )
+        rows = result.all()
+
+    for car_id, reg_number in rows:
+        try:
+            data = await asyncio.to_thread(enrich_vegvesen, reg_number)
+            if data:
+                async with session_factory() as db:
+                    await db.execute(update(Car).where(Car.id == car_id).values(**data))
+                    await db.commit()
+                enriched += 1
+        except Exception as e:
+            print(f"[vegvesen] ERROR car_id={car_id}: {e}")
+            errors += 1
+
+    print(f"[vegvesen] Enriched {enriched} cars, {errors} errors")
+    return {"enriched": enriched, "errors": errors}
+
+
+async def _enrich_liens(max_cars: int = 300) -> dict:
+    """Check for vehicle liens via Brønnøysundregistrene for cars with a reg_number."""
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select, update
+
+    from backend.db.models import Car
+    from backend.db.session import session_factory
+    from scraper.lien import check_lien
+
+    enriched = 0
+    errors = 0
+
+    async with session_factory() as db:
+        result = await db.execute(
+            select(Car.id, Car.reg_number)
+            .where(
+                Car.reg_number.is_not(None),
+                Car.lien_checked_at.is_(None),
+                Car.status == "active",
+            )
+            .limit(max_cars)
+        )
+        rows = result.all()
+
+    for car_id, reg_number in rows:
+        try:
+            data = await asyncio.to_thread(check_lien, reg_number)
+            if data:
+                async with session_factory() as db:
+                    await db.execute(
+                        update(Car).where(Car.id == car_id).values(
+                            **data, lien_checked_at=datetime.now(UTC)
+                        )
+                    )
+                    await db.commit()
+                enriched += 1
+        except Exception as e:
+            print(f"[lien] ERROR car_id={car_id}: {e}")
+            errors += 1
+
+    print(f"[lien] Checked {enriched} cars, {errors} errors")
+    return {"enriched": enriched, "errors": errors}
+
+
 async def run(dry_run: bool = False, max_pages: int = 9999, enrich_details: bool = False) -> dict:
     """
     Main scrape cycle. Returns summary dict.
@@ -342,6 +426,10 @@ async def run(dry_run: bool = False, max_pages: int = 9999, enrich_details: bool
         summary["enriched"] = enrich_result
         desc_result = await _enrich_descriptions(max_cars=100)
         summary["description_enriched"] = desc_result
+        vegvesen_result = await _enrich_vegvesen(max_cars=200)
+        summary["vegvesen_enriched"] = vegvesen_result
+        lien_result = await _enrich_liens(max_cars=300)
+        summary["lien_enriched"] = lien_result
 
     # --- DETECT outliers ---
     try:

@@ -42,6 +42,9 @@ class User(Base):
     alerts: Mapped[list["DealAlert"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    watchlist: Mapped[list["WatchlistItem"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Car(Base):
@@ -76,6 +79,11 @@ class Car(Base):
     drivetrain: Mapped[str | None] = mapped_column(Text)
     num_owners: Mapped[int | None] = mapped_column(Integer)
     condition_signals: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, server_default="{}")
+    reg_number: Mapped[str | None] = mapped_column(Text)
+    first_reg_date: Mapped[date | None] = mapped_column(Date)
+    has_lien: Mapped[bool | None] = mapped_column(Boolean)
+    lien_amount: Mapped[int | None] = mapped_column(Integer)
+    lien_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -155,6 +163,25 @@ class DealAlert(Base):
     matches: Mapped[list["AlertMatch"]] = relationship(
         back_populates="alert", cascade="all, delete-orphan"
     )
+
+
+class WatchlistItem(Base):
+    __tablename__ = "watchlist_items"
+    __table_args__ = (UniqueConstraint("user_id", "car_id", name="uq_watchlist_user_car"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    car_id: Mapped[int] = mapped_column(
+        ForeignKey("cars.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship(back_populates="watchlist")
+    car: Mapped["Car"] = relationship()
 
 
 class AlertMatch(Base):

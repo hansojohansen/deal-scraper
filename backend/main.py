@@ -6,7 +6,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from backend.api.routes import alerts, auth, cars, health, outliers, stats
+from backend.api.routes import alerts, auth, cars, health, outliers, stats, watchlist
 from backend.config import settings
 from backend.db.session import engine
 from backend.exceptions import ApiError, api_error_handler, generic_error_handler
@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(stats.router)
     app.include_router(outliers.router)
     app.include_router(alerts.router)
+    app.include_router(watchlist.router)
     return app
 
 

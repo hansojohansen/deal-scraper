@@ -49,6 +49,11 @@ class CarSummaryResponse(BaseModel):
     drivetrain: str | None = None
     num_owners: int | None = None
     condition_signals: dict = {}
+    reg_number: str | None = None
+    first_reg_date: date | None = None
+    has_lien: bool | None = None
+    lien_amount: int | None = None
+    score_chips: list[dict] = []
     first_seen_at: datetime
     last_seen_at: datetime | None
     outlier_score: OutlierSummary | None = None
