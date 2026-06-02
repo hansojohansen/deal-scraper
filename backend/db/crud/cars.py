@@ -1,9 +1,12 @@
-﻿from datetime import UTC, datetime
+﻿from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from backend.db.models import Car, PriceHistory
+
+_PRICE_DROP_TTL_DAYS = 14
 
 
 async def get_by_url(db: AsyncSession, url: str) -> Car | None:
@@ -66,9 +69,26 @@ async def upsert_car(db: AsyncSession, item: dict) -> tuple[Car, bool]:
         if item.get("image_url") and not existing.image_url:
             existing.image_url = item["image_url"]
 
+        features = dict(existing.features or {})
+        drop_at_str = features.get("price_dropped_at")
+        if drop_at_str:
+            try:
+                drop_at = datetime.fromisoformat(drop_at_str)
+                if now - drop_at > timedelta(days=_PRICE_DROP_TTL_DAYS):
+                    features.pop("price_dropped_recently", None)
+                    features.pop("price_dropped_at", None)
+            except ValueError:
+                pass
+
         if price is not None and price != existing.price:
+            if existing.price is not None and price < existing.price:
+                features["price_dropped_recently"] = True
+                features["price_dropped_at"] = now.isoformat()
             existing.price = price
             db.add(PriceHistory(car_id=existing.id, price=price))
+
+        existing.features = features
+        flag_modified(existing, "features")
 
         return existing, False
 
