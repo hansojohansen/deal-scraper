@@ -35,13 +35,15 @@ uvicorn backend.main:app --port 8080 --reload
 cd frontend && npm install && npm run dev
 
 # Run scraper manually
-python -m scraper.main --dry-run     # preview only
-python -m scraper.main               # actual run
+python -m scraper.main --dry-run               # preview only, no DB writes
+python -m scraper.main                         # full scrape
+python -m scraper.main --enrich-details        # scrape + fetch detail pages (50/run)
+python -m scraper.main --cleanup-prices        # mark bad-price cars removed, wipe stale scores, re-detect
 
 # Run tests
 pytest
 
-# Lint
+# Lint (CI runs this — must pass before deploy)
 ruff check .
 ```
 
@@ -58,6 +60,8 @@ Full JWT auth is implemented. Key files:
 
 Alerts require auth. Users see only their own alerts (filtered by `user_id`).
 
+**Known auth limitation**: JWT in `localStorage` is discouraged by OWASP. Planned upgrade: HttpOnly cookies + BFF pattern + passkeys/Google OAuth.
+
 ## Git Workflow
 
 After every meaningful change, commit and push:
@@ -67,12 +71,7 @@ git commit -m "feat: add finn.no scraper with pagination"
 git push
 ```
 
-Commit prefix conventions:
-- `feat:` new feature
-- `fix:` bug fix
-- `chore:` tooling/config/deps
-- `test:` tests only
-- `docs:` documentation
+Commit prefix conventions: `feat:` `fix:` `chore:` `test:` `docs:`
 
 ## Deployment
 
@@ -115,8 +114,23 @@ CORS_ORIGINS=["https://giscademy.com"]
 - HTML selectors for finn.no are in `config.yaml` under `scraper.finn.selectors` — change them there, not in `finn.py`
 - When `scraper/sources/finn.py` returns 0 results, first check `config.yaml` selectors before editing code
 - Price parsing uses `article.get_text(" ", strip=True)` so "640 000 kr" stays as one string across HTML tag boundaries. If finn.no redesigns and prices break, set `selectors.price` in `config.yaml` to a CSS selector string — no code change needed.
+- **Leasing detection**: `_parse_price()` returns `None` for cards containing `kr/mnd` / `leasing`. `_normalise()` sets `listing_type='lease'`. `is_relevant()` drops lease listings before DB storage.
+- **Price cap**: `config.yaml` → `filter.max_price_nok: 3000000`. `is_relevant()` rejects above this. Cars scraped before the cap: run `--cleanup-prices`.
 - Always write a `price_history` row when updating a car's price — never update `cars.price` without it
 - Rate limit: 1.2s delay between pages; respect robots.txt
+
+## Detail Enrichment
+
+`scraper/sources/finn.py` `fetch_detail()` fetches individual listing pages and extracts:
+- EU inspection dates (`eu_inspected_at`, `eu_next_deadline`)
+- Norwegian registration status (`is_norwegian_reg`)
+- `horsepower`, `body_type`, `engine_size_cc`
+- `description` (up to 5000 chars)
+- `color`, `seller_type` (private/dealer), `drivetrain` (fwd/rwd/awd/4wd), `num_owners`
+
+`scraper/enrich.py` sends the description to Gemini Flash and stores structured `condition_signals` JSONB on the car.
+
+Run with `--enrich-details` to process 50 un-enriched cars per invocation.
 
 ## Outlier Detection
 
@@ -124,8 +138,19 @@ Algorithm: **windowed median** (`engine/outlier.py`) — finds same brand+model 
 
 - Deal threshold: price >20% below peer median (`deal_threshold: -0.20` in `config.yaml`)
 - Stale threshold: remove flag when price rises within 5% of median (`stale_threshold: -0.05`)
-- Quality tiers: `excellent` (>25% below + Norwegian reg + valid EU), `good` (default deal), `check` (import or missing EU data), `skip` (price <30k NOK or mileage >400k km)
-- Detection runs automatically at the end of every scraper run — errors are caught and logged, never silent
+- Quality tiers: `excellent` (>25% below + Norwegian reg + valid EU), `good` (default deal), `check` (import or missing EU data), `skip` (price <30k NOK, >400k km, >3M NOK, or `listing_type='lease'`)
+- **`skip` tier cars do NOT get an OutlierScore** — they never appear in the deals view
+- `condition_adjusted_score` adjusts fair value ±5–10% based on `condition_signals` (service history, accident history, rust, owner count)
+- Detection pre-loads all cars + existing scores + recent price history in 3 bulk queries — no per-car DB queries in loop, avoids Supabase statement timeouts
+- Detection runs automatically at the end of every scraper run
+
+## Data Quality
+
+Run `python -m scraper.main --cleanup-prices` whenever bad data accumulates:
+1. Marks active cars with `price < 30 000` as removed (leasing monthly rates)
+2. Marks active cars with `price > 3 000 000` as removed (parse errors)
+3. Wipes ALL `outlier_scores` (clears stale scores from old algorithm versions)
+4. Re-runs full outlier detection on the clean dataset
 
 ## API Design (mobile-ready from day one)
 
@@ -133,6 +158,18 @@ Algorithm: **windowed median** (`engine/outlier.py`) — finds same brand+model 
 - All errors return `{"error": {"code": str, "message": str}}` — never HTML
 - Every list endpoint has a `limit` param with a maximum cap (100)
 - API versioned at `/api/v1/`
+- `/api/v1/cars` accepts 24 filter params — see `backend/api/routes/cars.py`
+
+## Product Direction (from deep-research-report.md)
+
+The research report (`deep-research-report.md` in repo root) describes the ideal Norwegian car deals product. Key directions:
+
+- **Official data first**: Statens vegvesen API (free, 50k calls/day) for technical data + PKK history. Brønnøysundregistrene Løsøreregisteret (free) for lien checks. These are the next major enrichment layer.
+- **Explainable scoring**: Every deal card should show reason chips ("8% under lokalmedian", "Heftelsefri", "EU ok til 2026") not just a percentage.
+- **Watchlist separate from alerts**: `watchlist_items` table for saving specific listings; `deal_alerts` for saved searches with notifications.
+- **Target deal score weights**: 40% price vs fair value, 15% vehicle quality/risk, 15% liquidity, 10% spec desirability, 10% seller trust, 10% freshness/momentum.
+- **Swipe UX**: Additive discovery surface on top of search — not a replacement.
+- **FINN legal posture**: robots.txt and ToS prohibit systematic scraping. Current scraping works but treat official/partner API access as the long-term direction.
 
 ## ECC Reference
 
