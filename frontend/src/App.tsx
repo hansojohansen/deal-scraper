@@ -11,6 +11,7 @@ import Alerts from "./pages/Alerts";
 import Watchlist from "./pages/Watchlist";
 import Compare from "./pages/Compare";
 import Swipe from "./pages/Swipe";
+import CarDetail from "./pages/CarDetail";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -114,6 +115,7 @@ function MainLayout() {
             <Route path="/watchlist" element={<ProtectedRoute><Watchlist /></ProtectedRoute>} />
             <Route path="/compare" element={<Compare />} />
             <Route path="/swipe" element={<Swipe />} />
+            <Route path="/cars/:id" element={<CarDetail />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>

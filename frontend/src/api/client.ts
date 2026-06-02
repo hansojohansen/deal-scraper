@@ -48,6 +48,11 @@ export interface ScoreChip {
   type: "green" | "red" | "neutral";
 }
 
+export interface PricePoint {
+  price: number;
+  recorded_at: string;
+}
+
 export interface Car {
   id: number;
   url: string;
@@ -71,14 +76,20 @@ export interface Car {
   seller_type: string | null;
   drivetrain: string | null;
   num_owners: number | null;
+  horsepower: number | null;
+  body_type: string | null;
+  engine_size_cc: number | null;
   condition_signals: Record<string, unknown>;
   first_seen_at: string;
+  last_seen_at: string | null;
   outlier_score: OutlierScore | null;
   reg_number: string | null;
   first_reg_date: string | null;
   has_lien: boolean | null;
   lien_amount: number | null;
   score_chips: ScoreChip[];
+  price_history?: PricePoint[];
+  features?: Record<string, unknown>;
 }
 
 export interface OutlierScore {
@@ -92,6 +103,7 @@ export interface OutlierScore {
   fair_value: number | null;
   method: string | null;
   quality_tier: string | null;
+  condition_adjusted_score: number | null;
   score_chips: Array<{ label: string; type: string }>;
 }
 

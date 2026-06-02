@@ -17,7 +17,9 @@ function WatchlistCard({ car }: { car: Car }) {
         </div>
       )}
       <div className="p-3 space-y-1.5 flex-1 flex flex-col">
-        <p className="font-semibold text-slate-100 text-sm leading-tight line-clamp-1">{car.title}</p>
+        <a href={`/cars/${car.id}`} className="hover:text-amber-400 transition-colors">
+          <p className="font-semibold text-slate-100 text-sm leading-tight line-clamp-1">{car.title}</p>
+        </a>
         <p className="text-xs text-slate-400">
           {car.year} · {car.mileage?.toLocaleString("no")} km
           {car.fuel_type ? ` · ${car.fuel_type}` : ""}

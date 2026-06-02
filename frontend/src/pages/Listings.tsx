@@ -115,7 +115,7 @@ function CarCard({ car, savedIds, onToggleSave }: {
 
       {/* Card body */}
       <div className="p-3 space-y-1.5">
-        <a href={car.url} target="_blank" rel="noreferrer" className="block">
+        <a href={`/cars/${car.id}`} className="block">
           <p className="font-semibold text-slate-100 text-sm leading-tight line-clamp-1 hover:text-amber-400 transition-colors">{car.title}</p>
         </a>
         <p className="text-xs text-slate-400">

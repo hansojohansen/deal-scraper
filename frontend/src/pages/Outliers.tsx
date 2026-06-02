@@ -232,8 +232,10 @@ export default function Outliers() {
                       <tr className="border-b border-slate-700 hover:bg-slate-700/50 transition-colors">
                         <td className="px-4 py-3 text-slate-500 text-xs">{i + 1}</td>
                         <td className="px-4 py-3">
-                          <p className="font-medium text-slate-100 whitespace-nowrap">{o.brand} {o.model}</p>
-                          <p className="text-xs text-slate-500 truncate max-w-[200px]">{o.title}</p>
+                          <a href={`/cars/${o.car_id}`} className="hover:text-amber-400 transition-colors">
+                            <p className="font-medium text-slate-100 whitespace-nowrap">{o.brand} {o.model}</p>
+                            <p className="text-xs text-slate-500 truncate max-w-[200px]">{o.title}</p>
+                          </a>
                         </td>
                         <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{o.year}</td>
                         <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{o.mileage?.toLocaleString("no")} km</td>
@@ -293,7 +295,7 @@ export default function Outliers() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <a href={o.url} target="_blank" rel="noreferrer"
+                      <a href={`/cars/${o.car_id}`}
                         className="font-semibold text-amber-400 hover:underline">
                         {o.title ?? `${o.brand} ${o.model}`}
                       </a>
