@@ -136,66 +136,73 @@ def _quality_tier(car: "Car", score: float) -> str:
     return "good"
 
 
-async def _check_price_dropped(db: AsyncSession, car_id: int) -> bool:
-    """Return True if this car had a price drop in the last 14 days."""
-    cutoff = datetime.now(UTC) - timedelta(days=14)
-    result = await db.execute(
-        select(PriceHistory.price)
-        .where(PriceHistory.car_id == car_id, PriceHistory.recorded_at >= cutoff)
-        .order_by(PriceHistory.recorded_at.asc())
-        .limit(10)
-    )
-    prices = [r[0] for r in result]
+def _has_price_dropped(car_id: int, recent_history: dict[int, list[int]]) -> bool:
+    """Return True if this car had a price drop in the pre-loaded recent history map."""
+    prices = recent_history.get(car_id, [])
     return len(prices) >= 2 and prices[-1] < prices[0]
 
 
 async def run_detection(db: AsyncSession) -> dict:
-    result = await db.execute(
+    """
+    Bulk outlier detection. Pre-loads all data upfront to avoid per-car DB
+    queries inside the loop (which trigger autoflush and cause statement timeouts
+    on hosted Postgres with strict timeouts).
+    """
+    # 1. Load all active cars with a price
+    cars_result = await db.execute(
         select(Car).where(Car.status == "active", Car.price.is_not(None))
     )
-    all_cars: list[Car] = list(result.scalars())
+    all_cars: list[Car] = list(cars_result.scalars())
 
-    upserted = 0
-    removed = 0
+    # 2. Pre-load all existing outlier scores keyed by car_id
+    scores_result = await db.execute(select(OutlierScore))
+    existing_scores: dict[int, OutlierScore] = {
+        s.car_id: s for s in scores_result.scalars()
+    }
+
+    # 3. Pre-load recent price history (last 14 days) in one query
+    cutoff = datetime.now(UTC) - timedelta(days=14)
+    ph_result = await db.execute(
+        select(PriceHistory.car_id, PriceHistory.price)
+        .where(PriceHistory.recorded_at >= cutoff)
+        .order_by(PriceHistory.car_id, PriceHistory.recorded_at)
+    )
+    recent_history: dict[int, list[int]] = {}
+    for row in ph_result:
+        recent_history.setdefault(row.car_id, []).append(row.price)
+
+    # 4. Compute all changes in pure Python (no DB queries in loop)
+    to_delete: list[int] = []   # car_ids whose OutlierScore should be removed
+    to_upsert: list[tuple[int, dict]] = []  # (car_id, vals) to insert or update
 
     for car in all_cars:
         median_result = _windowed_median(car, all_cars)
 
         if median_result is None:
-            r = await db.execute(
-                delete(OutlierScore).where(OutlierScore.car_id == car.id)
-            )
-            removed += r.rowcount
+            if car.id in existing_scores:
+                to_delete.append(car.id)
             continue
 
         peers, fair_value, reason = median_result
         raw_score = (car.price - fair_value) / fair_value
-
-        # Adjust fair value based on condition signals, compute condition-adjusted score
         adj_fair_value = _condition_adjusted_fair_value(car, fair_value)
         condition_adjusted_score = round((car.price - adj_fair_value) / adj_fair_value, 4)
 
-        # Use raw score for deal/stale threshold (condition adjustment is a bonus signal)
         is_deal = raw_score < DEAL_THRESHOLD
         stale = raw_score >= STALE_THRESHOLD
 
         if is_deal:
-            # Quality tier uses the condition-adjusted score (stricter "excellent" threshold)
             tier = _quality_tier(car, condition_adjusted_score)
 
-            # Flag price drop signal in features
-            price_dropped = await _check_price_dropped(db, car.id)
+            # Update price-drop signal in features (pure Python, no DB)
+            price_dropped = _has_price_dropped(car.id, recent_history)
             if price_dropped and not car.features.get("price_dropped_recently"):
                 car.features = {**car.features, "price_dropped_recently": True}
             elif not price_dropped and car.features.get("price_dropped_recently"):
                 car.features = {k: v for k, v in car.features.items() if k != "price_dropped_recently"}
 
-            existing = await db.execute(
-                select(OutlierScore).where(OutlierScore.car_id == car.id)
-            )
-            ex = existing.scalar_one_or_none()
             peer_avg = int(statistics.mean(p.price for p in peers))
-            vals = dict(
+            to_upsert.append((car.id, dict(
                 score=round(raw_score, 4),
                 condition_adjusted_score=condition_adjusted_score,
                 reason=reason,
@@ -204,18 +211,27 @@ async def run_detection(db: AsyncSession) -> dict:
                 fair_value=fair_value,
                 method="median",
                 quality_tier=tier,
-            )
-            if ex:
-                for k, v in vals.items():
-                    setattr(ex, k, v)
-            else:
-                db.add(OutlierScore(car_id=car.id, **vals))
-            upserted += 1
-        elif stale:
-            r = await db.execute(
-                delete(OutlierScore).where(OutlierScore.car_id == car.id)
-            )
-            removed += r.rowcount
+            )))
+        elif stale and car.id in existing_scores:
+            to_delete.append(car.id)
+
+    # 5. Apply deletes in a single batch (no per-row autoflush)
+    removed = 0
+    if to_delete:
+        r = await db.execute(
+            delete(OutlierScore).where(OutlierScore.car_id.in_(to_delete))
+        )
+        removed = r.rowcount
+
+    # 6. Apply upserts (updates in-place on tracked ORM objects, adds for new)
+    upserted = len(to_upsert)
+    for car_id, vals in to_upsert:
+        ex = existing_scores.get(car_id)
+        if ex:
+            for k, v in vals.items():
+                setattr(ex, k, v)
+        else:
+            db.add(OutlierScore(car_id=car_id, **vals))
 
     await db.commit()
     return {"cars_checked": len(all_cars), "upserted": upserted, "removed": removed}
