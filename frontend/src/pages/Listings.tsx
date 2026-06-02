@@ -5,6 +5,9 @@ import { SlidersHorizontal, X, Bell } from "lucide-react";
 import { api, type Car, type CarFilters } from "../api/client";
 
 const FUEL_TYPES = ["Bensin", "Diesel", "El", "Hybrid bensin", "Ladbar hybrid"];
+const TRANSMISSIONS = ["Manuell", "Automat"];
+const DRIVETRAINS = ["fwd", "rwd", "awd", "4wd"];
+const DRIVETRAIN_LABELS: Record<string, string> = { fwd: "Forhjul", rwd: "Bakhjul", awd: "AWD", "4wd": "4WD" };
 const empty: CarFilters = {};
 
 // Deterministic brand color from name
@@ -27,6 +30,32 @@ function euBadge(deadline: string | null) {
   if (d < now) return { label: "EU utløpt", cls: "bg-red-100 text-red-700" };
   if (d.getTime() - now.getTime() < yr) return { label: "EU snart", cls: "bg-orange-100 text-orange-700" };
   return { label: "EU ok", cls: "bg-green-900/40 text-green-400" };
+}
+
+function ConditionBadges({ signals }: { signals: Record<string, unknown> }) {
+  if (!signals || Object.keys(signals).length === 0) return null;
+  const green: string[] = [];
+  const red: string[] = [];
+  if (signals.is_one_owner === true) green.push("1 eier");
+  if (signals.has_service_history === true) green.push("Servicebok");
+  if (signals.recently_serviced === true) green.push("Nylig serv.");
+  if (signals.has_new_tires === true) green.push("Nye dekk");
+  if (signals.has_warranty === true) green.push("Garanti");
+  if (signals.is_smoke_free === true) green.push("Røykfri");
+  if (signals.has_accident_history === true) red.push("Ulykke");
+  if (signals.has_rust === true) red.push("Rust");
+  if (signals.is_imported === true) red.push("Import");
+  if (green.length === 0 && red.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1 pt-0.5">
+      {green.map((l) => (
+        <span key={l} className="text-[10px] bg-green-900/50 text-green-400 px-1.5 py-0.5 rounded">{l}</span>
+      ))}
+      {red.map((l) => (
+        <span key={l} className="text-[10px] bg-red-900/50 text-red-400 px-1.5 py-0.5 rounded">{l}</span>
+      ))}
+    </div>
+  );
 }
 
 function CarCard({ car }: { car: Car }) {
@@ -65,8 +94,11 @@ function CarCard({ car }: { car: Car }) {
         <p className="text-xs text-slate-400">
           {car.year} · {car.mileage?.toLocaleString("no")} km
           {car.fuel_type ? ` · ${car.fuel_type}` : ""}
+          {car.transmission ? ` · ${car.transmission}` : ""}
         </p>
         {car.location && <p className="text-xs text-slate-500">{car.location}</p>}
+
+        <ConditionBadges signals={car.condition_signals ?? {}} />
 
         <div className="flex items-center justify-between pt-1">
           <p className="font-bold text-slate-100">{car.price?.toLocaleString("no")} kr</p>
@@ -200,10 +232,15 @@ export default function Listings() {
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Maks km</label>
-        <input placeholder="f.eks. 100000" type="number" value={filters.mileage_max ?? ""}
-          onChange={(e) => setFilters((f) => ({ ...f, mileage_max: e.target.value }))}
-          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Km</label>
+        <div className="grid grid-cols-2 gap-2">
+          <input placeholder="Min km" type="number" value={filters.mileage_min ?? ""}
+            onChange={(e) => setFilters((f) => ({ ...f, mileage_min: e.target.value }))}
+            className="border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+          <input placeholder="Maks km" type="number" value={filters.mileage_max ?? ""}
+            onChange={(e) => setFilters((f) => ({ ...f, mileage_max: e.target.value }))}
+            className="border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -216,6 +253,53 @@ export default function Listings() {
       </div>
 
       <div className="space-y-2">
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Girkasse</label>
+        <select value={filters.transmission ?? ""} onChange={(e) => setFilters((f) => ({ ...f, transmission: e.target.value }))}
+          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+          <option value="">Alle</option>
+          {TRANSMISSIONS.map((t) => <option key={t}>{t}</option>)}
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Drivlinje</label>
+        <select value={filters.drivetrain ?? ""} onChange={(e) => setFilters((f) => ({ ...f, drivetrain: e.target.value }))}
+          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+          <option value="">Alle</option>
+          {DRIVETRAINS.map((d) => <option key={d} value={d}>{DRIVETRAIN_LABELS[d]}</option>)}
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Selgertype</label>
+        <select value={filters.seller_type ?? ""} onChange={(e) => setFilters((f) => ({ ...f, seller_type: e.target.value }))}
+          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+          <option value="">Alle</option>
+          <option value="private">Privat</option>
+          <option value="dealer">Forhandler</option>
+        </select>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Hestekrefter</label>
+        <div className="grid grid-cols-2 gap-2">
+          <input placeholder="Min hk" type="number" value={filters.horsepower_min ?? ""}
+            onChange={(e) => setFilters((f) => ({ ...f, horsepower_min: e.target.value }))}
+            className="border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+          <input placeholder="Maks hk" type="number" value={filters.horsepower_max ?? ""}
+            onChange={(e) => setFilters((f) => ({ ...f, horsepower_max: e.target.value }))}
+            className="border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Maks antall eiere</label>
+        <input placeholder="f.eks. 2" type="number" value={filters.num_owners_max ?? ""}
+          onChange={(e) => setFilters((f) => ({ ...f, num_owners_max: e.target.value }))}
+          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+      </div>
+
+      <div className="space-y-2">
         <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Annonnsetype</label>
         <select value={filters.listing_type ?? ""} onChange={(e) => setFilters((f) => ({ ...f, listing_type: e.target.value }))}
           className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
@@ -223,6 +307,30 @@ export default function Listings() {
           <option value="buy_now">Kjøp nå</option>
           <option value="auction">Auksjon</option>
         </select>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Tilstand</label>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={filters.is_norwegian_reg === "true"}
+              onChange={(e) => setFilters((f) => ({ ...f, is_norwegian_reg: e.target.checked ? "true" : "" }))}
+              className="rounded border-slate-600 bg-slate-800 accent-amber-500" />
+            <span className="text-sm text-slate-300">Norsk registrert</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={filters.has_service_history === "true"}
+              onChange={(e) => setFilters((f) => ({ ...f, has_service_history: e.target.checked ? "true" : "" }))}
+              className="rounded border-slate-600 bg-slate-800 accent-amber-500" />
+            <span className="text-sm text-slate-300">Servicehistorikk</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={filters.accident_free === "true"}
+              onChange={(e) => setFilters((f) => ({ ...f, accident_free: e.target.checked ? "true" : "" }))}
+              className="rounded border-slate-600 bg-slate-800 accent-amber-500" />
+            <span className="text-sm text-slate-300">Ulykkefri</span>
+          </label>
+        </div>
       </div>
 
       <button onClick={applyFilters}

@@ -18,6 +18,8 @@ class OutlierSummary(BaseModel):
     peer_avg_price: int
     fair_value: int | None = None
     method: str | None = None
+    quality_tier: str | None = None
+    condition_adjusted_score: float | None = None
 
 class CarSummaryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -41,6 +43,12 @@ class CarSummaryResponse(BaseModel):
     body_type: str | None = None
     engine_size_cc: int | None = None
     image_url: str | None = None
+    description: str | None = None
+    color: str | None = None
+    seller_type: str | None = None
+    drivetrain: str | None = None
+    num_owners: int | None = None
+    condition_signals: dict = {}
     first_seen_at: datetime
     last_seen_at: datetime | None
     outlier_score: OutlierSummary | None = None

@@ -211,10 +211,25 @@ def fetch_page(page: int, session: requests.Session, config: dict) -> list[dict]
     return results
 
 
+_DRIVETRAIN_MAP = {
+    "forhjulsdrift": "fwd",
+    "bakhjulsdrift": "rwd",
+    "firehjulsdrift": "4wd",
+    "4x4": "4wd",
+    "awd": "awd",
+    "4wd": "4wd",
+    "fwd": "fwd",
+    "rwd": "rwd",
+}
+
+
+def _map_drivetrain(v: str) -> str:
+    return _DRIVETRAIN_MAP.get(v.lower().strip(), v.lower().strip())
+
+
 def fetch_detail(url: str, session: requests.Session, delay: float = 1.2) -> dict:
     """
-    Fetch a finn.no listing detail page and extract EU inspection dates,
-    Norwegian registration status, horsepower, body type, and engine size.
+    Fetch a finn.no listing detail page and extract structured fields and description.
     Returns a partial dict with only the fields that were found.
     """
     time.sleep(delay)
@@ -226,6 +241,17 @@ def fetch_detail(url: str, session: requests.Session, delay: float = 1.2) -> dic
         return result
 
     soup = BeautifulSoup(resp.text, "lxml")
+
+    # Extract description text
+    desc_el = (
+        soup.find(attrs={"data-testid": "ad-description"})
+        or soup.find("div", class_=re.compile(r"description", re.IGNORECASE))
+        or soup.find("section", class_=re.compile(r"description", re.IGNORECASE))
+    )
+    if desc_el:
+        desc_text = desc_el.get_text(" ", strip=True)
+        if len(desc_text) > 20:
+            result["description"] = desc_text[:5000]
 
     dt_elements = soup.find_all("dt")
     for dt in dt_elements:
@@ -262,10 +288,24 @@ def fetch_detail(url: str, session: requests.Session, delay: float = 1.2) -> dic
         elif "karosseri" in label or "biltype" in label:
             result["body_type"] = _map_body_type(value)
 
-        elif "sylindervolum" in label or "motor" in label and "ccm" in value.lower():
+        elif "sylindervolum" in label or ("motor" in label and "ccm" in value.lower()):
             cc_str = re.sub(r"[^\d]", "", value)
             if cc_str:
                 result["engine_size_cc"] = int(cc_str)
+
+        elif label.strip() == "farge":
+            result["color"] = value
+
+        elif "type selger" in label or "selgertype" in label:
+            result["seller_type"] = "dealer" if "forhandler" in value.lower() else "private"
+
+        elif "hjuldrift" in label or "drivlinje" in label:
+            result["drivetrain"] = _map_drivetrain(value)
+
+        elif "antall eiere" in label:
+            num_m = re.search(r"\d+", value)
+            if num_m:
+                result["num_owners"] = int(num_m.group())
 
     return result
 

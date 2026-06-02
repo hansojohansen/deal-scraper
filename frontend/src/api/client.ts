@@ -61,6 +61,12 @@ export interface Car {
   is_norwegian_reg: boolean | null;
   listing_type: string | null;
   image_url: string | null;
+  description: string | null;
+  color: string | null;
+  seller_type: string | null;
+  drivetrain: string | null;
+  num_owners: number | null;
+  condition_signals: Record<string, unknown>;
   first_seen_at: string;
   outlier_score: OutlierScore | null;
 }
@@ -163,9 +169,19 @@ export interface CarFilters {
   year_max?: string;
   price_min?: string;
   price_max?: string;
+  mileage_min?: string;
   mileage_max?: string;
   fuel_type?: string;
   listing_type?: string;
+  transmission?: string;
+  seller_type?: string;
+  drivetrain?: string;
+  num_owners_max?: string;
+  horsepower_min?: string;
+  horsepower_max?: string;
+  is_norwegian_reg?: string;
+  has_service_history?: string;
+  accident_free?: string;
 }
 
 export const api = {

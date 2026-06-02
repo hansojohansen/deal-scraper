@@ -70,6 +70,12 @@ class Car(Base):
     body_type: Mapped[str | None] = mapped_column(Text, index=True)
     engine_size_cc: Mapped[int | None] = mapped_column(SmallInteger)
     image_url: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    color: Mapped[str | None] = mapped_column(Text)
+    seller_type: Mapped[str | None] = mapped_column(Text)
+    drivetrain: Mapped[str | None] = mapped_column(Text)
+    num_owners: Mapped[int | None] = mapped_column(Integer)
+    condition_signals: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, server_default="{}")
     first_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -114,6 +120,7 @@ class OutlierScore(Base):
     fair_value: Mapped[int | None] = mapped_column(Integer)
     method: Mapped[str | None] = mapped_column(Text, default="zscore")
     quality_tier: Mapped[str | None] = mapped_column(Text)
+    condition_adjusted_score: Mapped[float | None] = mapped_column(Float)
     detected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

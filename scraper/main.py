@@ -66,8 +66,8 @@ async def _fetch_batch_concurrent(
 
 
 async def _enrich_finn_details(max_cars: int = 50) -> dict:
-    """Fetch detail pages for finn.no cars missing EU inspection data."""
-    from sqlalchemy import select, update
+    """Fetch detail pages for finn.no cars missing EU inspection data or description."""
+    from sqlalchemy import or_, select, update
 
     from backend.db.models import Car
     from backend.db.session import session_factory
@@ -84,8 +84,11 @@ async def _enrich_finn_details(max_cars: int = 50) -> dict:
             select(Car.id, Car.url)
             .where(
                 Car.source == "finn.no",
-                Car.eu_inspected_at.is_(None),
                 Car.status == "active",
+                or_(
+                    Car.eu_inspected_at.is_(None),
+                    Car.description.is_(None),
+                ),
             )
             .limit(max_cars)
         )
@@ -109,6 +112,60 @@ async def _enrich_finn_details(max_cars: int = 50) -> dict:
 
     print(f"[enricher] Enriched {enriched} cars, {errors} errors")
     return {"enriched": enriched, "errors": errors}
+
+
+async def _enrich_descriptions(max_cars: int = 100) -> dict:
+    """Run Gemini analysis on cars that have a description but no condition signals yet."""
+    from sqlalchemy import select, update
+
+    from backend.db.models import Car
+    from backend.db.session import session_factory
+    from scraper.enrich import enrich_description
+
+    try:
+        from backend.config import settings
+        gemini_api_key = settings.gemini_api_key
+    except Exception:
+        gemini_api_key = ""
+
+    if not gemini_api_key:
+        print("[enricher] No GEMINI_API_KEY — skipping description enrichment")
+        return {"enriched": 0, "skipped": 0, "errors": 0}
+
+    enriched = 0
+    skipped = 0
+    errors = 0
+
+    async with session_factory() as db:
+        result = await db.execute(
+            select(Car.id, Car.description)
+            .where(
+                Car.description.is_not(None),
+                Car.condition_signals == {},
+                Car.status == "active",
+            )
+            .limit(max_cars)
+        )
+        rows = result.all()
+
+    for car_id, description in rows:
+        if not description:
+            skipped += 1
+            continue
+        try:
+            signals = await asyncio.to_thread(enrich_description, description, gemini_api_key)
+            async with session_factory() as db:
+                await db.execute(
+                    update(Car).where(Car.id == car_id).values(condition_signals=signals or {})
+                )
+                await db.commit()
+            enriched += 1
+        except Exception as e:
+            print(f"[enricher] Gemini ERROR car_id={car_id}: {e}")
+            errors += 1
+
+    print(f"[enricher] Description enrichment: {enriched} done, {skipped} skipped, {errors} errors")
+    return {"enriched": enriched, "skipped": skipped, "errors": errors}
 
 
 async def run(dry_run: bool = False, max_pages: int = 9999, enrich_details: bool = False) -> dict:
@@ -283,6 +340,8 @@ async def run(dry_run: bool = False, max_pages: int = 9999, enrich_details: bool
     if enrich_details:
         enrich_result = await _enrich_finn_details(max_cars=50)
         summary["enriched"] = enrich_result
+        desc_result = await _enrich_descriptions(max_cars=100)
+        summary["description_enriched"] = desc_result
 
     # --- DETECT outliers ---
     try:

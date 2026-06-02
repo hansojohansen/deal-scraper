@@ -26,10 +26,21 @@ async def list_cars(
     year_max: int | None = None,
     price_min: int | None = None,
     price_max: int | None = None,
+    mileage_min: int | None = None,
     mileage_max: int | None = None,
     fuel_type: str | None = None,
     listing_type: str | None = None,
     body_type: str | None = None,
+    transmission: str | None = None,
+    seller_type: str | None = None,
+    drivetrain: str | None = None,
+    color: str | None = None,
+    num_owners_max: int | None = None,
+    horsepower_min: int | None = None,
+    horsepower_max: int | None = None,
+    is_norwegian_reg: bool | None = None,
+    has_service_history: bool | None = None,
+    accident_free: bool | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     q = select(Car).options(selectinload(Car.outlier_score)).where(Car.status == "active")
@@ -49,6 +60,8 @@ async def list_cars(
         q = q.where(Car.price >= price_min)
     if price_max:
         q = q.where(Car.price <= price_max)
+    if mileage_min:
+        q = q.where(Car.mileage >= mileage_min)
     if mileage_max:
         q = q.where(Car.mileage <= mileage_max)
     if fuel_type:
@@ -57,6 +70,26 @@ async def list_cars(
         q = q.where(Car.listing_type == listing_type)
     if body_type:
         q = q.where(Car.body_type.ilike(f"%{body_type}%"))
+    if transmission:
+        q = q.where(Car.transmission.ilike(f"%{transmission}%"))
+    if seller_type:
+        q = q.where(Car.seller_type == seller_type)
+    if drivetrain:
+        q = q.where(Car.drivetrain == drivetrain)
+    if color:
+        q = q.where(Car.color.ilike(f"%{color}%"))
+    if num_owners_max is not None:
+        q = q.where(Car.num_owners <= num_owners_max)
+    if horsepower_min:
+        q = q.where(Car.horsepower >= horsepower_min)
+    if horsepower_max:
+        q = q.where(Car.horsepower <= horsepower_max)
+    if is_norwegian_reg is not None:
+        q = q.where(Car.is_norwegian_reg == is_norwegian_reg)
+    if has_service_history is True:
+        q = q.where(Car.condition_signals["has_service_history"].as_boolean().is_(True))
+    if accident_free is True:
+        q = q.where(Car.condition_signals["has_accident_history"].as_boolean().is_(False))
     q = q.order_by(Car.id).limit(pagination.limit + 1)
     result = await db.execute(q)
     cars = list(result.scalars())

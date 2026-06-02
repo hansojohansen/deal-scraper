@@ -1,21 +1,27 @@
 """
-Windowed median deal detector.
+Windowed median deal detector with condition-adjusted scoring.
 
 For each car, finds same brand+model peers within a year/mileage window and
 uses their median as the fair value. Two windows tried in order:
   tight: ±1 year, ±25k km
   loose: ±3 years, ±50k km (fallback if tight has fewer than min_peers)
 Minimum 3 peers required. Deal threshold: price >20% below peer median.
+
+Condition signals (from Gemini description analysis) adjust the fair value:
+  - service history + one owner: fair value +7% (car worth more, real discount)
+  - accident history: fair value -10% (already discounted, apparent deal may not be)
+  - rust: fair value -8%
+  - 4+ owners: fair value -5%
 """
 import statistics
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import yaml
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import Car, OutlierScore
+from backend.db.models import Car, OutlierScore, PriceHistory
 
 _cfg = yaml.safe_load(Path("config.yaml").read_text())["outlier"]
 TIGHT_YEAR_WINDOW: int = _cfg["tight_year_window"]
@@ -70,6 +76,36 @@ def _windowed_median(
     return None
 
 
+def _condition_adjusted_fair_value(car: "Car", raw_fair_value: int) -> int:
+    """
+    Adjust the peer-median fair value based on condition signals from AI description parsing.
+    A car with full service history is worth more → the discount is more real.
+    A car with accident history is already discounted → apparent deal may be misleading.
+    """
+    signals = car.condition_signals or {}
+    multiplier = 1.0
+
+    has_service = signals.get("has_service_history") is True
+    is_one_owner = signals.get("is_one_owner") is True
+    has_accident = signals.get("has_accident_history") is True
+    has_rust = signals.get("has_rust") is True
+
+    if has_service and is_one_owner:
+        multiplier += 0.07  # car worth 7% more than bare median
+    elif has_service:
+        multiplier += 0.04
+
+    if has_accident:
+        multiplier -= 0.10  # car worth 10% less → apparent "deal" shrinks
+    if has_rust:
+        multiplier -= 0.08
+
+    if car.num_owners is not None and car.num_owners >= 4:
+        multiplier -= 0.05
+
+    return max(1, int(raw_fair_value * multiplier))
+
+
 def _quality_tier(car: "Car", score: float) -> str:
     """
     Classify deal quality.
@@ -94,6 +130,19 @@ def _quality_tier(car: "Car", score: float) -> str:
     return "good"
 
 
+async def _check_price_dropped(db: AsyncSession, car_id: int) -> bool:
+    """Return True if this car had a price drop in the last 14 days."""
+    cutoff = datetime.now(UTC) - timedelta(days=14)
+    result = await db.execute(
+        select(PriceHistory.price)
+        .where(PriceHistory.car_id == car_id, PriceHistory.recorded_at >= cutoff)
+        .order_by(PriceHistory.recorded_at.asc())
+        .limit(10)
+    )
+    prices = [r[0] for r in result]
+    return len(prices) >= 2 and prices[-1] < prices[0]
+
+
 async def run_detection(db: AsyncSession) -> dict:
     result = await db.execute(
         select(Car).where(Car.status == "active", Car.price.is_not(None))
@@ -114,19 +163,35 @@ async def run_detection(db: AsyncSession) -> dict:
             continue
 
         peers, fair_value, reason = median_result
-        score = (car.price - fair_value) / fair_value
-        is_deal = score < DEAL_THRESHOLD
-        stale = score >= STALE_THRESHOLD
+        raw_score = (car.price - fair_value) / fair_value
+
+        # Adjust fair value based on condition signals, compute condition-adjusted score
+        adj_fair_value = _condition_adjusted_fair_value(car, fair_value)
+        condition_adjusted_score = round((car.price - adj_fair_value) / adj_fair_value, 4)
+
+        # Use raw score for deal/stale threshold (condition adjustment is a bonus signal)
+        is_deal = raw_score < DEAL_THRESHOLD
+        stale = raw_score >= STALE_THRESHOLD
 
         if is_deal:
-            tier = _quality_tier(car, score)
+            # Quality tier uses the condition-adjusted score (stricter "excellent" threshold)
+            tier = _quality_tier(car, condition_adjusted_score)
+
+            # Flag price drop signal in features
+            price_dropped = await _check_price_dropped(db, car.id)
+            if price_dropped and not car.features.get("price_dropped_recently"):
+                car.features = {**car.features, "price_dropped_recently": True}
+            elif not price_dropped and car.features.get("price_dropped_recently"):
+                car.features = {k: v for k, v in car.features.items() if k != "price_dropped_recently"}
+
             existing = await db.execute(
                 select(OutlierScore).where(OutlierScore.car_id == car.id)
             )
             ex = existing.scalar_one_or_none()
             peer_avg = int(statistics.mean(p.price for p in peers))
             vals = dict(
-                score=round(score, 4),
+                score=round(raw_score, 4),
+                condition_adjusted_score=condition_adjusted_score,
                 reason=reason,
                 peer_group_size=len(peers),
                 peer_avg_price=peer_avg,
