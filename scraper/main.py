@@ -398,23 +398,26 @@ async def _cleanup_prices() -> dict:
     max_price = config.get("filter", {}).get("max_price_nok", 3_000_000)
 
     async with session_factory() as db:
+        # Mark leasing/scrap cars (price < MIN_PRICE_NOK) as removed
         r1 = await db.execute(
-            text("DELETE FROM outlier_scores WHERE car_id IN (SELECT id FROM cars WHERE price < 20000)")
+            text("UPDATE cars SET status = 'removed' WHERE price < 30000 AND status = 'active'")
         )
+        # Mark impossible-price cars as removed
         r2 = await db.execute(
-            text(f"UPDATE cars SET status = 'removed' WHERE price > {max_price}")
+            text(f"UPDATE cars SET status = 'removed' WHERE price > {max_price} AND status = 'active'")
         )
-        r3 = await db.execute(
-            text(f"DELETE FROM outlier_scores WHERE car_id IN (SELECT id FROM cars WHERE price > {max_price})")
-        )
+        # Wipe ALL outlier_scores for a clean slate — stale 'ols'/'zscore' scores
+        # from old detection runs survive otherwise (their new score may be between
+        # DEAL_THRESHOLD and STALE_THRESHOLD, so neither upsert nor delete fires)
+        r3 = await db.execute(text("DELETE FROM outlier_scores"))
         await db.commit()
 
-    removed_scores = r1.rowcount
-    marked_removed = r2.rowcount
-    removed_high_scores = r3.rowcount
-    print(f"[cleanup] Removed {removed_scores} outlier scores for lease-priced cars (price < 20k)")
-    print(f"[cleanup] Marked {marked_removed} cars as removed (price > {max_price:,})")
-    print(f"[cleanup] Removed {removed_high_scores} outlier scores for high-price cars")
+    marked_low = r1.rowcount
+    marked_high = r2.rowcount
+    wiped_scores = r3.rowcount
+    print(f"[cleanup] Marked {marked_low} cars as removed (price < 30k — leasing/scrap)")
+    print(f"[cleanup] Marked {marked_high} cars as removed (price > {max_price:,})")
+    print(f"[cleanup] Wiped {wiped_scores} stale outlier scores for clean re-detection")
 
     print("[cleanup] Re-running outlier detection on cleaned dataset...")
     from engine.outlier import run_detection
@@ -423,9 +426,9 @@ async def _cleanup_prices() -> dict:
     print(f"[cleanup] Detection: {detection['upserted']} deals flagged, {detection['removed']} removed")
 
     return {
-        "removed_lease_scores": removed_scores,
-        "marked_removed": marked_removed,
-        "removed_high_price_scores": removed_high_scores,
+        "marked_low_price": marked_low,
+        "marked_high_price": marked_high,
+        "wiped_scores": wiped_scores,
         "detection": detection,
     }
 
@@ -440,7 +443,7 @@ if __name__ == "__main__":
 
     if args.cleanup_prices:
         result = asyncio.run(_cleanup_prices())
-        print(f"\n[cleanup] Done: {result['marked_removed']} cars removed, {result['removed_lease_scores']} bad scores deleted")
+        print(f"\n[cleanup] Done: {result['marked_low_price'] + result['marked_high_price']} cars removed, {result['wiped_scores']} scores wiped")
         sys.exit(0)
 
     result = asyncio.run(run(dry_run=args.dry_run, max_pages=args.max_pages, enrich_details=args.enrich_details))

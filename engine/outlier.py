@@ -194,6 +194,12 @@ async def run_detection(db: AsyncSession) -> dict:
         if is_deal:
             tier = _quality_tier(car, condition_adjusted_score)
 
+            # "skip" tier means salvage/scrap/leasing — not a useful deal signal
+            if tier == "skip":
+                if car.id in existing_scores:
+                    to_delete.append(car.id)
+                continue
+
             # Update price-drop signal in features (pure Python, no DB)
             price_dropped = _has_price_dropped(car.id, recent_history)
             if price_dropped and not car.features.get("price_dropped_recently"):

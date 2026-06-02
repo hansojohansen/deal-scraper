@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LayoutGrid, LayoutList, ExternalLink, ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { api, type Outlier, type PeerCar } from "../api/client";
@@ -226,8 +226,8 @@ export default function Outliers() {
                   const ref = o.fair_value ?? o.peer_avg_price;
                   const expanded = expandedId === o.car_id;
                   return (
-                    <>
-                      <tr key={o.id} className="border-b border-slate-700 hover:bg-slate-700/50 transition-colors">
+                    <React.Fragment key={o.id}>
+                      <tr className="border-b border-slate-700 hover:bg-slate-700/50 transition-colors">
                         <td className="px-4 py-3 text-slate-500 text-xs">{i + 1}</td>
                         <td className="px-4 py-3">
                           <p className="font-medium text-slate-100 whitespace-nowrap">{o.brand} {o.model}</p>
@@ -260,7 +260,7 @@ export default function Outliers() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </React.Fragment>
                   );
                 })}
               </tbody>
