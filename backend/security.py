@@ -2,21 +2,22 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from fastapi import HTTPException
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from backend.config import settings
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def hash_password(plain: str) -> str:
-    return _pwd_context.hash(plain)
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(plain, hashed)
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
+    except Exception:
+        return False
 
 
 def create_access_token(user_id: str) -> str:
@@ -44,8 +45,11 @@ def generate_reset_token() -> str:
 
 def hash_reset_token(raw: str) -> str:
     """Store bcrypt hash of the raw token, never the raw token itself."""
-    return _pwd_context.hash(raw)
+    return bcrypt.hashpw(raw.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_reset_token(raw: str, hashed: str) -> bool:
-    return _pwd_context.verify(raw, hashed)
+    try:
+        return bcrypt.checkpw(raw.encode(), hashed.encode())
+    except Exception:
+        return False
