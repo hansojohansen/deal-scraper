@@ -1,7 +1,7 @@
 """Unit tests for the outlier detection engine (no DB required)."""
 from unittest.mock import MagicMock
 
-from engine.outlier import _windowed_median, _quality_tier
+from engine.outlier import _quality_tier, _windowed_median
 
 
 def _car(id, brand, model, year, mileage, price,
