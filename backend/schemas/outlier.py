@@ -37,3 +37,4 @@ class OutlierResponse(BaseModel):
     method: str | None = None
     quality_tier: str | None = None
     score_chips: list[dict] = []
+    image_url: str | None = None

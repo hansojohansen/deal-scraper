@@ -18,6 +18,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 import MarketBar from "./components/MarketBar";
+import CompareTray from "./components/CompareTray";
 
 const nav = [
   { to: "/", label: "Dashboard", Icon: LayoutDashboard },
@@ -105,6 +106,7 @@ function MainLayout() {
           <span className="font-bold text-amber-400">BilDeal</span>
         </div>
         <MarketBar />
+        <CompareTray />
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 text-slate-100">
           <Routes>
             <Route path="/" element={<Dashboard />} />

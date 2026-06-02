@@ -4,6 +4,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { SlidersHorizontal, X, Bell, Heart, Plus } from "lucide-react";
 import { api, type Car, type CarFilters } from "../api/client";
 import { useAuth } from "../contexts/AuthContext";
+import { useCompare } from "../hooks/useCompare";
 
 const FUEL_TYPES = ["Bensin", "Diesel", "El", "Hybrid bensin", "Ladbar hybrid"];
 const TRANSMISSIONS = ["Manuell", "Automat"];
@@ -76,10 +77,12 @@ function ScoreChipBadges({ chips }: { chips: Car["score_chips"] }) {
   );
 }
 
-function CarCard({ car, savedIds, onToggleSave }: {
+function CarCard({ car, savedIds, onToggleSave, compareIds, onToggleCompare }: {
   car: Car;
   savedIds: Set<number>;
   onToggleSave: (car: Car) => void;
+  compareIds: number[];
+  onToggleCompare: (car: Car) => void;
 }) {
   const discountPct = car.outlier_score
     ? Math.round(Math.abs((car.price ?? 0) / car.outlier_score.peer_avg_price - 1) * 100)
@@ -88,6 +91,7 @@ function CarCard({ car, savedIds, onToggleSave }: {
   const initial = (car.brand ?? "?")[0].toUpperCase();
   const barW = discountPct ? Math.min(100, (discountPct / 40) * 100) : 0;
   const isSaved = savedIds.has(car.id);
+  const isInCompare = compareIds.includes(car.id);
   const monthlyCost = car.price ? Math.round(car.price / 60) : null;
 
   return (
@@ -155,16 +159,9 @@ function CarCard({ car, savedIds, onToggleSave }: {
               />
             </button>
             <button
-              title="Legg til sammenligning"
-              className="p-1 rounded hover:bg-slate-700 transition-colors text-slate-500 hover:text-amber-400"
-              onClick={(e) => {
-                e.preventDefault();
-                const existing = (sessionStorage.getItem("compare_ids") ?? "").split(",").filter(Boolean);
-                if (!existing.includes(String(car.id))) existing.push(String(car.id));
-                const ids = existing.slice(-4).join(",");
-                sessionStorage.setItem("compare_ids", ids);
-                window.open(`/compare?ids=${ids}`, "_blank");
-              }}
+              title={isInCompare ? "Fjern fra sammenligning" : "Legg til sammenligning"}
+              className={`p-1 rounded hover:bg-slate-700 transition-colors ${isInCompare ? "text-amber-400" : "text-slate-500 hover:text-amber-400"}`}
+              onClick={(e) => { e.preventDefault(); onToggleCompare(car); }}
             >
               <Plus size={15} />
             </button>
@@ -192,6 +189,7 @@ function sortCars(cars: Car[], mode: SortMode): Car[] {
 export default function Listings() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+  const { ids: compareIds, add: addToCompare, remove: removeFromCompare } = useCompare();
   const [filters, setFilters] = useState<CarFilters>(empty);
   const [applied, setApplied] = useState<CarFilters>(empty);
   const [sort, setSort] = useState<SortMode>("newest");
@@ -228,6 +226,11 @@ export default function Listings() {
       setToast(alreadySaved ? "Kunne ikke fjerne fra lagret" : "Kunne ikke lagre bilen");
       setTimeout(() => setToast(null), 3000);
     }
+  }
+
+  function handleToggleCompare(car: Car) {
+    if (compareIds.includes(car.id)) removeFromCompare(car.id);
+    else addToCompare({ id: car.id, title: car.title ?? `${car.brand} ${car.model}` });
   }
 
   const { data: brandsData } = useQuery({ queryKey: ["brands"], queryFn: api.getBrands });
@@ -509,7 +512,7 @@ export default function Listings() {
 
         {/* Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {cars.map((car) => <CarCard key={car.id} car={car} savedIds={savedIds} onToggleSave={handleToggleSave} />)}
+          {cars.map((car) => <CarCard key={car.id} car={car} savedIds={savedIds} onToggleSave={handleToggleSave} compareIds={compareIds} onToggleCompare={handleToggleCompare} />)}
         </div>
 
         <div ref={loaderRef} className="h-8 flex items-center justify-center">

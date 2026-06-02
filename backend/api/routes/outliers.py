@@ -30,6 +30,7 @@ async def list_outliers(
             mileage=car.mileage, price=car.price, url=car.url, title=car.title,
             fair_value=outlier.fair_value, method=outlier.method, quality_tier=outlier.quality_tier,
             score_chips=compute_score_chips(car, outlier),
+            image_url=car.image_url,
         ))
     return result
 

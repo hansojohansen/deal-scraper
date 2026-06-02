@@ -128,6 +128,7 @@ export interface Outlier extends OutlierScore {
   price: number | null;
   url: string;
   title: string | null;
+  image_url: string | null;
 }
 
 export interface CursorPage<T> {
