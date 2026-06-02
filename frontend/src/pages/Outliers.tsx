@@ -215,8 +215,10 @@ export default function Outliers() {
                   <Th label="Km" k="mileage" />
                   <Th label="Pris" k="price" />
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Takst</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Kr/mnd</th>
                   <Th label="Rabatt" k="discount" />
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Kvalitet</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">Score</th>
                   <th className="px-4 py-3 w-10" />
                 </tr>
               </thead>
@@ -240,8 +242,21 @@ export default function Outliers() {
                           {ref?.toLocaleString("no")} kr
                           {o.method === "ols" && <span className="ml-1 text-slate-600">(OLS)</span>}
                         </td>
+                        <td className="px-4 py-3 text-slate-400 whitespace-nowrap text-xs">
+                          ~{Math.round((o.price ?? 0) / 60).toLocaleString("no")} kr/mnd
+                        </td>
                         <td className="px-4 py-3 min-w-[140px]"><DealBar value={d} /></td>
                         <td className="px-4 py-3"><QualityBadge tier={o.quality_tier} /></td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-1">
+                            {(o.score_chips ?? []).slice(0, 3).map((c, i) => {
+                              const cls = c.type === "green" ? "bg-green-900/50 text-green-400" :
+                                          c.type === "red"   ? "bg-red-900/50 text-red-400" :
+                                                               "bg-slate-700 text-slate-400";
+                              return <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}>{c.label}</span>;
+                            })}
+                          </div>
+                        </td>
                         <td className="px-4 py-3 flex items-center gap-2">
                           <a href={o.url} target="_blank" rel="noreferrer"
                             className="text-slate-500 hover:text-blue-600 transition-colors">
@@ -255,7 +270,7 @@ export default function Outliers() {
                       </tr>
                       {expanded && (
                         <tr key={`${o.id}-peers`} className="border-b border-slate-700 bg-slate-900/60">
-                          <td colSpan={9} className="px-6 pb-4">
+                          <td colSpan={11} className="px-6 pb-4">
                             <PeerPanel outlier={o} peers={peersCache[o.car_id] ?? []} loading={!!peersLoading[o.car_id]} />
                           </td>
                         </tr>
@@ -277,12 +292,18 @@ export default function Outliers() {
               <div key={o.id} className="bg-slate-800 rounded-xl border border-slate-700 p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <a href={o.url} target="_blank" rel="noreferrer"
                         className="font-semibold text-amber-400 hover:underline">
                         {o.title ?? `${o.brand} ${o.model}`}
                       </a>
                       <QualityBadge tier={o.quality_tier} />
+                      {(o.score_chips ?? []).slice(0, 3).map((c, i) => {
+                        const cls = c.type === "green" ? "bg-green-900/50 text-green-400" :
+                                    c.type === "red"   ? "bg-red-900/50 text-red-400" :
+                                                         "bg-slate-700 text-slate-400";
+                        return <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}>{c.label}</span>;
+                      })}
                     </div>
                     <p className="text-sm text-slate-400">
                       {o.year} · {o.mileage?.toLocaleString("no")} km
@@ -291,6 +312,7 @@ export default function Outliers() {
                   </div>
                   <div className="text-right shrink-0 space-y-1">
                     <p className="text-xl font-bold text-slate-100">{o.price?.toLocaleString("no")} kr</p>
+                    <p className="text-xs text-slate-500">~{Math.round((o.price ?? 0) / 60).toLocaleString("no")} kr/mnd</p>
                     <p className="text-xs text-slate-500">
                       Takst: {ref?.toLocaleString("no")} kr
                       {o.method === "ols" && " (OLS)"}

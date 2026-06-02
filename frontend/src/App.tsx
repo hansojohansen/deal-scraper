@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Routes, Route, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Car, TrendingDown, BarChart2, Bell, Menu, X, LogOut } from "lucide-react";
+import { LayoutDashboard, Car, TrendingDown, BarChart2, Bell, Menu, X, LogOut, Bookmark, Zap } from "lucide-react";
 import { useAuth } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
@@ -8,6 +8,9 @@ import Listings from "./pages/Listings";
 import Outliers from "./pages/Outliers";
 import Analytics from "./pages/Analytics";
 import Alerts from "./pages/Alerts";
+import Watchlist from "./pages/Watchlist";
+import Compare from "./pages/Compare";
+import Swipe from "./pages/Swipe";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -19,8 +22,10 @@ const nav = [
   { to: "/", label: "Dashboard", Icon: LayoutDashboard },
   { to: "/listings", label: "Listings", Icon: Car },
   { to: "/outliers", label: "Deals", Icon: TrendingDown },
+  { to: "/swipe", label: "Oppdag", Icon: Zap },
   { to: "/analytics", label: "Analytics", Icon: BarChart2 },
   { to: "/alerts", label: "Varsler", Icon: Bell },
+  { to: "/watchlist", label: "Lagret", Icon: Bookmark },
 ];
 
 function NavItems({ onClick }: { onClick?: () => void }) {
@@ -106,6 +111,9 @@ function MainLayout() {
             <Route path="/outliers" element={<Outliers />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
+            <Route path="/watchlist" element={<ProtectedRoute><Watchlist /></ProtectedRoute>} />
+            <Route path="/compare" element={<Compare />} />
+            <Route path="/swipe" element={<Swipe />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>

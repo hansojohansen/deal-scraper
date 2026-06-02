@@ -43,6 +43,11 @@ export interface TokenResponse {
   token_type: string;
 }
 
+export interface ScoreChip {
+  label: string;
+  type: "green" | "red" | "neutral";
+}
+
 export interface Car {
   id: number;
   url: string;
@@ -69,6 +74,11 @@ export interface Car {
   condition_signals: Record<string, unknown>;
   first_seen_at: string;
   outlier_score: OutlierScore | null;
+  reg_number: string | null;
+  first_reg_date: string | null;
+  has_lien: boolean | null;
+  lien_amount: number | null;
+  score_chips: ScoreChip[];
 }
 
 export interface OutlierScore {
@@ -82,6 +92,7 @@ export interface OutlierScore {
   fair_value: number | null;
   method: string | null;
   quality_tier: string | null;
+  score_chips: Array<{ label: string; type: string }>;
 }
 
 export interface PeerCar {
@@ -182,6 +193,7 @@ export interface CarFilters {
   is_norwegian_reg?: string;
   has_service_history?: string;
   accident_free?: string;
+  monthly_cost_max?: string;
 }
 
 export const api = {
@@ -245,4 +257,10 @@ export const api = {
       body: JSON.stringify({ is_active }),
     }),
   deleteAlert: (id: number) => request<void>(`/api/v1/alerts/${id}`, { method: "DELETE" }),
+  getCar: (id: number) => request<Car>(`/api/v1/cars/${id}`),
+  getWatchlist: () => request<Car[]>("/api/v1/watchlist"),
+  addToWatchlist: (car_id: number) => request<{ saved: boolean }>("/api/v1/watchlist", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ car_id }),
+  }),
+  removeFromWatchlist: (car_id: number) => request<void>(`/api/v1/watchlist/${car_id}`, { method: "DELETE" }),
 };

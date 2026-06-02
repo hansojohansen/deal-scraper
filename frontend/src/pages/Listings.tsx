@@ -1,8 +1,9 @@
 ﻿import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { SlidersHorizontal, X, Bell } from "lucide-react";
+import { SlidersHorizontal, X, Bell, Heart, Plus } from "lucide-react";
 import { api, type Car, type CarFilters } from "../api/client";
+import { useAuth } from "../contexts/AuthContext";
 
 const FUEL_TYPES = ["Bensin", "Diesel", "El", "Hybrid bensin", "Ladbar hybrid"];
 const TRANSMISSIONS = ["Manuell", "Automat"];
@@ -58,39 +59,65 @@ function ConditionBadges({ signals }: { signals: Record<string, unknown> }) {
   );
 }
 
-function CarCard({ car }: { car: Car }) {
+function ScoreChipBadges({ chips }: { chips: Car["score_chips"] }) {
+  if (!chips || chips.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1 pt-0.5">
+      {chips.map((c, i) => {
+        const cls =
+          c.type === "green" ? "bg-green-900/50 text-green-400" :
+          c.type === "red"   ? "bg-red-900/50 text-red-400" :
+                               "bg-slate-700 text-slate-400";
+        return (
+          <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}>{c.label}</span>
+        );
+      })}
+    </div>
+  );
+}
+
+function CarCard({ car, savedIds, onToggleSave }: {
+  car: Car;
+  savedIds: Set<number>;
+  onToggleSave: (car: Car) => void;
+}) {
   const discountPct = car.outlier_score
     ? Math.round(Math.abs((car.price ?? 0) / car.outlier_score.peer_avg_price - 1) * 100)
     : null;
   const eu = euBadge(car.eu_next_deadline);
   const initial = (car.brand ?? "?")[0].toUpperCase();
   const barW = discountPct ? Math.min(100, (discountPct / 40) * 100) : 0;
+  const isSaved = savedIds.has(car.id);
+  const monthlyCost = car.price ? Math.round(car.price / 60) : null;
 
   return (
-    <a href={car.url} target="_blank" rel="noreferrer"
-      className="block bg-slate-800 rounded-xl border border-slate-700 hover:border-blue-400 hover:shadow-sm transition-all overflow-hidden">
+    <div className="bg-slate-800 rounded-xl border border-slate-700 hover:border-blue-400 hover:shadow-sm transition-all overflow-hidden">
       {/* Color header / image */}
-      <div className={`relative h-[100px] ${car.image_url ? "" : brandColor(car.brand)} flex items-center justify-center overflow-hidden`}>
-        {car.image_url
-          ? <img src={car.image_url} alt={car.title ?? ""} className="w-full h-full object-cover" />
-          : <span className="text-white text-4xl font-bold opacity-30 select-none">{initial}</span>
-        }
-        <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
-          {car.listing_type === "auction" && (
-            <span className="text-xs bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded font-semibold">AUKSJON</span>
-          )}
-          {car.is_norwegian_reg === false && (
-            <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded font-semibold">IMPORT</span>
-          )}
-          {eu && (
-            <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${eu.cls}`}>{eu.label}</span>
-          )}
+      <a href={car.url} target="_blank" rel="noreferrer" className="block">
+        <div className={`relative h-[100px] ${car.image_url ? "" : brandColor(car.brand)} flex items-center justify-center overflow-hidden`}>
+          {car.image_url
+            ? <img src={car.image_url} alt={car.title ?? ""} className="w-full h-full object-cover" />
+            : <span className="text-white text-4xl font-bold opacity-30 select-none">{initial}</span>
+          }
+          <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
+            {car.listing_type === "auction" && (
+              <span className="text-xs bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded font-semibold">AUKSJON</span>
+            )}
+            {car.is_norwegian_reg === false && (
+              <span className="text-xs bg-red-500 text-white px-1.5 py-0.5 rounded font-semibold">IMPORT</span>
+            )}
+            {eu && (
+              <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${eu.cls}`}>{eu.label}</span>
+            )}
+          </div>
         </div>
-      </div>
+      </a>
 
       {/* Card body */}
       <div className="p-3 space-y-1.5">
-        <p className="font-semibold text-slate-100 text-sm leading-tight line-clamp-1">{car.title}</p>
+        <a href={car.url} target="_blank" rel="noreferrer" className="block">
+          <p className="font-semibold text-slate-100 text-sm leading-tight line-clamp-1 hover:text-amber-400 transition-colors">{car.title}</p>
+        </a>
         <p className="text-xs text-slate-400">
           {car.year} · {car.mileage?.toLocaleString("no")} km
           {car.fuel_type ? ` · ${car.fuel_type}` : ""}
@@ -99,20 +126,46 @@ function CarCard({ car }: { car: Car }) {
         {car.location && <p className="text-xs text-slate-500">{car.location}</p>}
 
         <ConditionBadges signals={car.condition_signals ?? {}} />
+        <ScoreChipBadges chips={car.score_chips ?? []} />
 
         <div className="flex items-center justify-between pt-1">
-          <p className="font-bold text-slate-100">{car.price?.toLocaleString("no")} kr</p>
-          {discountPct !== null && (
-            <div className="flex items-center gap-1.5">
-              <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                <div className="h-full bg-green-500 rounded-full" style={{ width: `${barW}%` }} />
+          <div>
+            <p className="font-bold text-slate-100">{car.price?.toLocaleString("no")} kr</p>
+            {monthlyCost && (
+              <p className="text-[10px] text-slate-500">~{monthlyCost.toLocaleString("no")} kr/mnd</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {discountPct !== null && (
+              <div className="flex items-center gap-1.5">
+                <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                  <div className="h-full bg-green-500 rounded-full" style={{ width: `${barW}%` }} />
+                </div>
+                <span className="text-xs font-semibold text-green-400">-{discountPct}%</span>
               </div>
-              <span className="text-xs font-semibold text-green-400">-{discountPct}%</span>
-            </div>
-          )}
+            )}
+            <button
+              onClick={(e) => { e.preventDefault(); onToggleSave(car); }}
+              title={isSaved ? "Fjern fra lagret" : "Lagre"}
+              className="p-1 rounded hover:bg-slate-700 transition-colors"
+            >
+              <Heart
+                size={15}
+                className={isSaved ? "text-rose-400 fill-rose-400" : "text-slate-500"}
+              />
+            </button>
+            <a
+              href={`/compare?ids=${car.id}`}
+              title="Sammenlign"
+              className="p-1 rounded hover:bg-slate-700 transition-colors text-slate-500 hover:text-amber-400"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Plus size={15} />
+            </a>
+          </div>
         </div>
       </div>
-    </a>
+    </div>
   );
 }
 
@@ -132,11 +185,42 @@ function sortCars(cars: Car[], mode: SortMode): Car[] {
 
 export default function Listings() {
   const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
   const [filters, setFilters] = useState<CarFilters>(empty);
   const [applied, setApplied] = useState<CarFilters>(empty);
   const [sort, setSort] = useState<SortMode>("newest");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
   const loaderRef = useRef<HTMLDivElement>(null);
+
+  // Populate savedIds from watchlist on mount if authenticated
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    api.getWatchlist().then((cars) => {
+      setSavedIds(new Set(cars.map((c) => c.id)));
+    }).catch(() => { /* silently fail */ });
+  }, [isAuthenticated]);
+
+  async function handleToggleSave(car: Car) {
+    if (!isAuthenticated) { navigate("/login"); return; }
+    const alreadySaved = savedIds.has(car.id);
+    setSavedIds((prev) => {
+      const next = new Set(prev);
+      if (alreadySaved) next.delete(car.id); else next.add(car.id);
+      return next;
+    });
+    try {
+      if (alreadySaved) await api.removeFromWatchlist(car.id);
+      else await api.addToWatchlist(car.id);
+    } catch {
+      // Revert optimistic update
+      setSavedIds((prev) => {
+        const next = new Set(prev);
+        if (alreadySaved) next.add(car.id); else next.delete(car.id);
+        return next;
+      });
+    }
+  }
 
   const { data: brandsData } = useQuery({ queryKey: ["brands"], queryFn: api.getBrands });
   const brands = brandsData?.map((b) => b.brand) ?? [];
@@ -300,6 +384,13 @@ export default function Listings() {
       </div>
 
       <div className="space-y-2">
+        <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Maks månedskost (kr/mnd)</label>
+        <input placeholder="f.eks. 5000" type="number" value={filters.monthly_cost_max ?? ""}
+          onChange={(e) => setFilters((f) => ({ ...f, monthly_cost_max: e.target.value }))}
+          className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />
+      </div>
+
+      <div className="space-y-2">
         <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">Annonnsetype</label>
         <select value={filters.listing_type ?? ""} onChange={(e) => setFilters((f) => ({ ...f, listing_type: e.target.value }))}
           className="w-full border border-slate-600 bg-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
@@ -405,7 +496,7 @@ export default function Listings() {
 
         {/* Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {cars.map((car) => <CarCard key={car.id} car={car} />)}
+          {cars.map((car) => <CarCard key={car.id} car={car} savedIds={savedIds} onToggleSave={handleToggleSave} />)}
         </div>
 
         <div ref={loaderRef} className="h-8 flex items-center justify-center">
