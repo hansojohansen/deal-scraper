@@ -10,10 +10,11 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import DealEvent
+from backend.db.models import Car, DealEvent, OutlierScore
 from backend.db.session import session_factory
 from backend.dependencies import get_current_user, get_db
 from backend.exceptions import ApiError
@@ -142,3 +143,80 @@ async def lookup_reg(
         raise ApiError(code="not_found", message="Kjøretøy ikke funnet i Statens vegvesen.", status=404)
 
     return {"reg_number": reg_clean, **data}
+
+
+class PortfolioRequest(BaseModel):
+    car_ids: list[int]
+
+
+class PortfolioItem(BaseModel):
+    car_id: int
+    title: str | None
+    brand: str | None
+    model: str | None
+    year: int | None
+    price: int | None
+    fair_value: int | None
+    score: float | None
+    discount_pct: int | None
+    quality_tier: str | None
+    recommendation: str
+
+
+@router.post("/portfolio", response_model=list[PortfolioItem])
+async def portfolio_analysis(
+    body: PortfolioRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Bulk fair-value analysis for a list of car_ids. Requires pro or dealer plan."""
+    if getattr(current_user, "plan", "free") not in _PLAN_B2B:
+        raise ApiError(code="plan_required", message="Portfolio-analyse krever Pro eller Dealer-abonnement.", status=403)
+    if not body.car_ids:
+        return []
+    if len(body.car_ids) > 50:
+        raise ApiError(code="too_many", message="Maks 50 biler per analyse.", status=400)
+
+    cars = (await db.execute(
+        select(Car).where(Car.id.in_(body.car_ids))
+    )).scalars().all()
+
+    scores = (await db.execute(
+        select(OutlierScore).where(OutlierScore.car_id.in_(body.car_ids))
+    )).scalars().all()
+    score_map = {s.car_id: s for s in scores}
+
+    results: list[PortfolioItem] = []
+    for car in cars:
+        s = score_map.get(car.id)
+        fair_value = s.fair_value if s else None
+        score = s.score if s else None
+        discount_pct = round(abs(score) * 100) if score is not None else None
+        quality_tier = s.quality_tier if s else None
+
+        if score is None:
+            recommendation = "Ingen data"
+        elif score <= -0.25:
+            recommendation = "Kjøp — sterkt underpriset"
+        elif score <= -0.10:
+            recommendation = "Interessant — under markedspris"
+        elif score <= 0.05:
+            recommendation = "Rettferdig priset"
+        else:
+            recommendation = "Overpriset — forhandle ned"
+
+        results.append(PortfolioItem(
+            car_id=car.id,
+            title=car.title,
+            brand=car.brand,
+            model=car.model,
+            year=car.year,
+            price=car.price,
+            fair_value=fair_value,
+            score=score,
+            discount_pct=discount_pct,
+            quality_tier=quality_tier,
+            recommendation=recommendation,
+        ))
+
+    return results

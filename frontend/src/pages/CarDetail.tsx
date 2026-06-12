@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, ArrowLeft, GitCompare, Calculator } from "lucide-react";
+import { ExternalLink, ArrowLeft, GitCompare, Calculator, TrendingDown } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { api, type Car, type ScoreChip } from "../api/client";
 import TradeInCalculator from "../components/TradeInCalculator";
+import TCOCalculator from "../components/TCOCalculator";
 
 function Chip({ chip }: { chip: ScoreChip }) {
   const cls = chip.type === "green"
@@ -47,6 +48,7 @@ export default function CarDetail() {
   const navigate = useNavigate();
   const carId = parseInt(id ?? "", 10);
   const [tradeInOpen, setTradeInOpen] = useState(false);
+  const [tcoOpen, setTcoOpen] = useState(false);
 
   const { data: car, isLoading, isError } = useQuery<Car>({
     queryKey: ["car", carId],
@@ -135,6 +137,11 @@ export default function CarDetail() {
               className="flex items-center gap-1.5 px-3 py-2 border border-slate-600 hover:bg-slate-700 text-slate-300 rounded-lg text-sm transition-colors">
               <Calculator size={14} /> Trade-In
             </button>
+            <button
+              onClick={() => setTcoOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 border border-slate-600 hover:bg-slate-700 text-slate-300 rounded-lg text-sm transition-colors">
+              <TrendingDown size={14} /> TCO
+            </button>
           </div>
         </div>
       </div>
@@ -214,6 +221,7 @@ export default function CarDetail() {
       )}
 
       <TradeInCalculator car={car} isOpen={tradeInOpen} onClose={() => setTradeInOpen(false)} />
+      <TCOCalculator car={car} isOpen={tcoOpen} onClose={() => setTcoOpen(false)} />
     </div>
   );
 }

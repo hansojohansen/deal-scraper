@@ -1,7 +1,7 @@
 import { useSearchParams } from "react-router-dom";
 import { useQueries } from "@tanstack/react-query";
 import { ExternalLink, GitCompare } from "lucide-react";
-import { api, type Car } from "../api/client";
+import { api, type Car, type MarketStats } from "../api/client";
 
 const ROWS: { label: string; key: keyof Car; format?: (v: unknown) => string }[] = [
   { label: "Merke", key: "brand", format: (v) => String(v ?? "–") },
@@ -55,6 +55,23 @@ export default function Compare() {
     })),
   });
 
+  const loading = results.some((r) => r.isLoading);
+  const cars = results.map((r) => r.data).filter(Boolean) as Car[];
+
+  const marketResults = useQueries({
+    queries: cars.map((car) => ({
+      queryKey: ["marketStats", car.brand, car.model],
+      queryFn: () => api.getMarketStats(car.brand ?? "", car.model ?? ""),
+      enabled: !!car.brand && !!car.model,
+    })),
+  });
+
+  function getMarket(car: Car): MarketStats | null {
+    const idx = cars.indexOf(car);
+    const data = marketResults[idx]?.data ?? [];
+    return data.find((m) => m.brand === car.brand && m.model === car.model) ?? null;
+  }
+
   if (ids.length === 0) {
     return (
       <div className="text-center py-16 space-y-3">
@@ -64,9 +81,6 @@ export default function Compare() {
       </div>
     );
   }
-
-  const loading = results.some((r) => r.isLoading);
-  const cars = results.map((r) => r.data).filter(Boolean) as Car[];
 
   if (loading) return <p className="text-slate-400">Laster…</p>;
 
@@ -157,6 +171,32 @@ export default function Compare() {
                   </div>
                 </td>
               ))}
+            </tr>
+
+            {/* Market median row */}
+            <tr className="border-b border-slate-700/50 hover:bg-slate-800/50">
+              <td className="px-4 py-2.5 text-xs font-medium text-slate-400 whitespace-nowrap">Median mktpris</td>
+              {cars.map((car) => {
+                const m = getMarket(car);
+                return (
+                  <td key={car.id} className="px-4 py-2.5 text-sm text-slate-400">
+                    {m?.median_price != null ? `${m.median_price.toLocaleString("no")} kr` : "–"}
+                  </td>
+                );
+              })}
+            </tr>
+
+            {/* DOM row */}
+            <tr className="border-b border-slate-700/50 hover:bg-slate-800/50">
+              <td className="px-4 py-2.5 text-xs font-medium text-slate-400 whitespace-nowrap">Snitt salgstid</td>
+              {cars.map((car) => {
+                const m = getMarket(car);
+                return (
+                  <td key={car.id} className="px-4 py-2.5 text-sm text-slate-400">
+                    {m?.avg_dom_days != null ? `${Math.round(m.avg_dom_days)} dager` : "–"}
+                  </td>
+                );
+              })}
             </tr>
           </tbody>
         </table>

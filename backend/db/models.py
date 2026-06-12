@@ -225,6 +225,35 @@ class DealEvent(Base):
     )
 
 
+class CrmLead(Base):
+    __tablename__ = "crm_leads"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    car_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cars.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    stage: Mapped[str] = mapped_column(Text, nullable=False, default="lead", server_default="lead")
+    title: Mapped[str | None] = mapped_column(Text)
+    brand: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(Text)
+    year: Mapped[int | None] = mapped_column(SmallInteger)
+    price: Mapped[int | None] = mapped_column(Integer)
+    notes: Mapped[str | None] = mapped_column(Text)
+    contact_name: Mapped[str | None] = mapped_column(Text)
+    contact_phone: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped["User"] = relationship()
+
+
 class AlertMatch(Base):
     __tablename__ = "alert_matches"
     __table_args__ = (UniqueConstraint("alert_id", "car_id", name="uq_alert_car"),)

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Routes, Route, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Car, TrendingDown, BarChart2, Bell, Menu, X, LogOut, Bookmark, Zap, Radio } from "lucide-react";
+import { LayoutDashboard, Car, TrendingDown, BarChart2, Bell, Menu, X, LogOut, Bookmark, Zap, Radio, Kanban, PieChart } from "lucide-react";
 import { useAuth } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
@@ -13,6 +13,8 @@ import Compare from "./pages/Compare";
 import Swipe from "./pages/Swipe";
 import ArbitrageRadar from "./pages/ArbitrageRadar";
 import CarDetail from "./pages/CarDetail";
+import CRM from "./pages/CRM";
+import Portfolio from "./pages/Portfolio";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -30,6 +32,8 @@ const nav = [
   { to: "/alerts", label: "Varsler", Icon: Bell },
   { to: "/watchlist", label: "Lagret", Icon: Bookmark },
   { to: "/radar", label: "Radar", Icon: Radio },
+  { to: "/crm", label: "CRM", Icon: Kanban },
+  { to: "/portfolio", label: "Portfolio", Icon: PieChart },
 ];
 
 function NavItems({ onClick }: { onClick?: () => void }) {
@@ -120,6 +124,8 @@ function MainLayout() {
             <Route path="/compare" element={<Compare />} />
             <Route path="/swipe" element={<Swipe />} />
             <Route path="/radar" element={<ArbitrageRadar />} />
+            <Route path="/crm" element={<ProtectedRoute><CRM /></ProtectedRoute>} />
+            <Route path="/portfolio" element={<ProtectedRoute><Portfolio /></ProtectedRoute>} />
             <Route path="/cars/:id" element={<CarDetail />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -171,6 +171,58 @@ export interface MarketStats {
   sample_count: number;
 }
 
+export interface CrmLead {
+  id: number;
+  car_id: number | null;
+  stage: string;
+  title: string | null;
+  brand: string | null;
+  model: string | null;
+  year: number | null;
+  price: number | null;
+  notes: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeadCreate {
+  car_id?: number;
+  stage?: string;
+  title?: string;
+  brand?: string;
+  model?: string;
+  year?: number;
+  price?: number;
+  notes?: string;
+  contact_name?: string;
+  contact_phone?: string;
+}
+
+export interface LeadUpdate {
+  stage?: string;
+  title?: string;
+  notes?: string;
+  contact_name?: string;
+  contact_phone?: string;
+  price?: number;
+}
+
+export interface PortfolioItem {
+  car_id: number;
+  title: string | null;
+  brand: string | null;
+  model: string | null;
+  year: number | null;
+  price: number | null;
+  fair_value: number | null;
+  score: number | null;
+  discount_pct: number | null;
+  quality_tier: string | null;
+  recommendation: string;
+}
+
 export interface VegvesenData {
   reg_number: string;
   first_reg_date: string | null;
@@ -311,4 +363,24 @@ export const api = {
   removeFromWatchlist: (car_id: number) => request<void>(`/api/v1/watchlist/${car_id}`, { method: "DELETE" }),
   lookupReg: (reg: string) =>
     request<VegvesenData>(`/api/v1/b2b/lookup-reg?reg=${encodeURIComponent(reg)}`),
+  portfolioAnalysis: (car_ids: number[]) =>
+    request<PortfolioItem[]>("/api/v1/b2b/portfolio", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ car_ids }),
+    }),
+  crmListLeads: () => request<CrmLead[]>("/api/v1/crm/leads"),
+  crmCreateLead: (body: LeadCreate) =>
+    request<CrmLead>("/api/v1/crm/leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  crmUpdateLead: (id: number, body: LeadUpdate) =>
+    request<CrmLead>(`/api/v1/crm/leads/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  crmDeleteLead: (id: number) => request<void>(`/api/v1/crm/leads/${id}`, { method: "DELETE" }),
 };
