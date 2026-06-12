@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink, ArrowLeft, GitCompare } from "lucide-react";
+import { ExternalLink, ArrowLeft, GitCompare, Calculator } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { api, type Car, type ScoreChip } from "../api/client";
+import TradeInCalculator from "../components/TradeInCalculator";
 
 function Chip({ chip }: { chip: ScoreChip }) {
   const cls = chip.type === "green"
@@ -44,6 +46,7 @@ export default function CarDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const carId = parseInt(id ?? "", 10);
+  const [tradeInOpen, setTradeInOpen] = useState(false);
 
   const { data: car, isLoading, isError } = useQuery<Car>({
     queryKey: ["car", carId],
@@ -117,7 +120,7 @@ export default function CarDetail() {
             </div>
           )}
 
-          <div className="flex gap-2 pt-2">
+          <div className="flex gap-2 pt-2 flex-wrap">
             <a href={car.url} target="_blank" rel="noreferrer"
               className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold rounded-lg text-sm transition-colors">
               <ExternalLink size={14} /> Se annonse
@@ -126,6 +129,11 @@ export default function CarDetail() {
               onClick={() => navigate(`/compare?ids=${car.id}`)}
               className="flex items-center gap-1.5 px-3 py-2 border border-slate-600 hover:bg-slate-700 text-slate-300 rounded-lg text-sm transition-colors">
               <GitCompare size={14} /> Sammenlign
+            </button>
+            <button
+              onClick={() => setTradeInOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 border border-slate-600 hover:bg-slate-700 text-slate-300 rounded-lg text-sm transition-colors">
+              <Calculator size={14} /> Trade-In
             </button>
           </div>
         </div>
@@ -204,6 +212,8 @@ export default function CarDetail() {
           <p className="text-sm text-slate-300 whitespace-pre-line leading-relaxed">{car.description}</p>
         </div>
       )}
+
+      <TradeInCalculator car={car} isOpen={tradeInOpen} onClose={() => setTradeInOpen(false)} />
     </div>
   );
 }

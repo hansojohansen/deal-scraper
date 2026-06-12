@@ -30,6 +30,15 @@ export default function Analytics() {
     enabled: !!brand,
   });
 
+  const { data: marketStatsData } = useQuery({
+    queryKey: ["marketStats", brand],
+    queryFn: () => api.getMarketStats(brand),
+    enabled: !!brand,
+  });
+  const domByModel = new Map<string, number | null>(
+    (marketStatsData ?? []).map((m) => [m.model, m.avg_dom_days])
+  );
+
   // Scatter data: all cars for selected brand+model
   const { data: scatterPage } = useQuery({
     queryKey: ["scatterCars", brand, model],
@@ -179,19 +188,26 @@ export default function Analytics() {
                   <th className="px-4 py-3"><SortHeader label="Snittpris" k="avg_price" /></th>
                   <th className="px-4 py-3"><SortHeader label="Lavest" k="min_price" /></th>
                   <th className="px-4 py-3"><SortHeader label="Høyest" k="max_price" /></th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap">Snitt salgstid</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700">
-                {sorted.map((row: ModelStats) => (
-                  <tr key={row.model} className="hover:bg-slate-700/50 transition-colors cursor-pointer"
-                    onClick={() => setModel(row.model)}>
-                    <td className="px-4 py-3 font-medium text-slate-100">{row.model}</td>
-                    <td className="px-4 py-3 text-right text-slate-400">{row.count}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-100">{fmt(row.avg_price)} kr</td>
-                    <td className="px-4 py-3 text-right text-slate-400">{fmt(row.min_price)} kr</td>
-                    <td className="px-4 py-3 text-right text-slate-400">{fmt(row.max_price)} kr</td>
-                  </tr>
-                ))}
+                {sorted.map((row: ModelStats) => {
+                  const dom = domByModel.get(row.model);
+                  return (
+                    <tr key={row.model} className="hover:bg-slate-700/50 transition-colors cursor-pointer"
+                      onClick={() => setModel(row.model)}>
+                      <td className="px-4 py-3 font-medium text-slate-100">{row.model}</td>
+                      <td className="px-4 py-3 text-right text-slate-400">{row.count}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-slate-100">{fmt(row.avg_price)} kr</td>
+                      <td className="px-4 py-3 text-right text-slate-400">{fmt(row.min_price)} kr</td>
+                      <td className="px-4 py-3 text-right text-slate-400">{fmt(row.max_price)} kr</td>
+                      <td className="px-4 py-3 text-right text-slate-500">
+                        {dom != null ? `${Math.round(dom)} d` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -171,6 +171,17 @@ export interface MarketStats {
   sample_count: number;
 }
 
+export interface VegvesenData {
+  reg_number: string;
+  first_reg_date: string | null;
+  eu_next_deadline: string | null;
+  eu_inspected_at: string | null;
+  is_norwegian_reg: boolean | null;
+  has_lien: boolean | null;
+  lien_amount: number | null;
+  [key: string]: unknown;
+}
+
 export interface Alert {
   id: number;
   notify_email: string;
@@ -298,4 +309,6 @@ export const api = {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ car_id }),
   }),
   removeFromWatchlist: (car_id: number) => request<void>(`/api/v1/watchlist/${car_id}`, { method: "DELETE" }),
+  lookupReg: (reg: string) =>
+    request<VegvesenData>(`/api/v1/b2b/lookup-reg?reg=${encodeURIComponent(reg)}`),
 };

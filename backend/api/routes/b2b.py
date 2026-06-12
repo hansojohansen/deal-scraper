@@ -5,9 +5,11 @@ B2B endpoints:
 """
 import asyncio
 import json
+import uuid
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +17,7 @@ from backend.db.models import DealEvent
 from backend.db.session import session_factory
 from backend.dependencies import get_current_user, get_db
 from backend.exceptions import ApiError
+from backend.security import decode_access_token
 from scraper.vegvesen import enrich_vegvesen
 
 router = APIRouter(prefix="/api/v1/b2b", tags=["b2b"])
@@ -22,6 +25,28 @@ router = APIRouter(prefix="/api/v1/b2b", tags=["b2b"])
 _PLAN_B2B = {"pro", "dealer"}
 _POLL_INTERVAL = 30  # seconds between DB polls
 _HEARTBEAT_INTERVAL = 25  # seconds between heartbeat pings
+_bearer = HTTPBearer(auto_error=False)
+
+
+async def _get_user_from_token_or_header(
+    token: str | None = Query(None),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Auth helper for SSE — accepts JWT from ?token= query param or Authorization header."""
+    from backend.db.crud import users as users_crud
+    raw = token or (credentials.credentials if credentials else None)
+    if not raw:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    user_id_str = decode_access_token(raw)
+    try:
+        user_id = uuid.UUID(user_id_str)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = await users_crud.get_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
 
 
 async def _poll_events(last_id: int, min_discount: float, brand: str | None,
@@ -67,7 +92,7 @@ async def stream_deals(
     model: str | None = None,
     max_price: int | None = None,
     quality_tier: str | None = None,
-    current_user=Depends(get_current_user),
+    current_user=Depends(_get_user_from_token_or_header),
 ):
     """Server-Sent Events stream of newly detected deals. Requires pro or dealer plan."""
     if getattr(current_user, "plan", "free") not in _PLAN_B2B:
