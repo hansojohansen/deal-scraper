@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { api } from "../api/client";
 
 export default function Login() {
-  const { setTokenAndUser } = useAuth();
+  const { setUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const next = (location.state as { next?: string } | null)?.next ?? "/alerts";
@@ -19,9 +19,8 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      const { access_token } = await api.auth.login(email, password);
-      const user = await api.auth.getMe(access_token);
-      setTokenAndUser(access_token, user);
+      const user = await api.auth.login(email, password);
+      setUser(user);
       navigate(next, { replace: true });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");

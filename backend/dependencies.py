@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import AsyncGenerator
 
-from fastapi import Depends, HTTPException, Query
+from fastapi import Depends, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,17 +17,39 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ):
-    if not credentials:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    """
+    Auth resolution order:
+    1. HttpOnly cookie 'session'  — browser clients (validated against user_sessions table)
+    2. Authorization: Bearer      — CLI / programmatic callers (JWT-only, no session table)
+
+    SameSite=Strict on the cookie means no CSRF token is needed for cookie auth.
+    """
+    from backend.db.crud import sessions as sessions_crud
     from backend.db.crud import users as users_crud
-    user_id_str = decode_access_token(credentials.credentials)
+
+    cookie_token = request.cookies.get("session")
+
+    if cookie_token:
+        user_id_str = decode_access_token(cookie_token)
+        # Verify the session is still active (not revoked on logout)
+        session = await sessions_crud.get_by_token(db, cookie_token)
+        if not session:
+            raise HTTPException(status_code=401, detail="Session expired or revoked")
+    elif credentials:
+        # Bearer token path — for CLI / programmatic API use; no session table check
+        user_id_str = decode_access_token(credentials.credentials)
+    else:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     try:
         user_id = uuid.UUID(user_id_str)
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
     user = await users_crud.get_by_id(db, user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -35,13 +57,12 @@ async def get_current_user(
 
 
 async def get_current_user_optional(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: AsyncSession = Depends(get_db),
 ):
-    if not credentials:
-        return None
     try:
-        return await get_current_user(credentials, db)
+        return await get_current_user(request, credentials, db)
     except HTTPException:
         return None
 

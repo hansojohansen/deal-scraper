@@ -71,11 +71,8 @@ export default function ArbitrageRadar() {
     esRef.current?.close();
     const q = new URLSearchParams({ min_discount_pct: String(minDiscount) });
     if (brand) q.set("brand", brand);
-    const token = localStorage.getItem("auth_token");
-    // EventSource doesn't support custom headers — pass token via query param
-    // (backend reads it from ?token= as a fallback for SSE)
-    if (token) q.set("token", token);
-    const es = new EventSource(`/api/v1/b2b/stream?${q}`);
+    // Cookie is sent automatically by the browser — no token in URL needed
+    const es = new EventSource(`/api/v1/b2b/stream?${q}`, { withCredentials: true });
     es.onopen = () => setConnected(true);
     es.onerror = () => setConnected(false);
     es.onmessage = (e) => {

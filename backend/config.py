@@ -3,11 +3,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str
-    jwt_secret: str = "dev-secret-change-in-production"
+    jwt_secret: str  # required — no default; set JWT_SECRET in .env
     jwt_algorithm: str = "HS256"
     access_token_expire_hours: int = 24
     password_reset_expire_minutes: int = 30
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000", "capacitor://localhost"]
+    cookie_secure: bool = False  # set COOKIE_SECURE=true in production (HTTPS)
+    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
     gemini_api_key: str = ""
     smtp_host: str = ""
     smtp_port: int = 587

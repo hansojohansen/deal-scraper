@@ -1,25 +1,14 @@
 const BASE = "";
 
-function getToken(): string | null {
-  return localStorage.getItem("auth_token");
-}
-
-function clearAuth() {
-  localStorage.removeItem("auth_token");
-  localStorage.removeItem("auth_user");
-}
-
-async function request<T>(path: string, options?: RequestInit, token?: string): Promise<T> {
-  const tok = token ?? getToken();
+// All requests include credentials so the HttpOnly session cookie is sent automatically.
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     ...(options?.headers as Record<string, string>),
   };
-  if (tok) headers["Authorization"] = `Bearer ${tok}`;
 
-  const res = await fetch(BASE + path, { ...options, headers });
+  const res = await fetch(BASE + path, { ...options, headers, credentials: "include" });
 
   if (res.status === 401) {
-    clearAuth();
     window.location.href = "/login";
     throw new Error("Session expired");
   }
@@ -37,11 +26,6 @@ export interface User {
   email: string;
   is_verified: boolean;
   plan: "free" | "pro" | "dealer";
-}
-
-export interface TokenResponse {
-  access_token: string;
-  token_type: string;
 }
 
 export interface ScoreChip {
@@ -291,7 +275,7 @@ export interface CarFilters {
 export const api = {
   auth: {
     login: (email: string, password: string) =>
-      request<TokenResponse>("/api/v1/auth/login", {
+      request<User>("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -302,8 +286,8 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       }),
-    getMe: (token: string) =>
-      request<User>("/api/v1/auth/me", {}, token),
+    getMe: () => request<User>("/api/v1/auth/me"),
+    logout: () => request<void>("/api/v1/auth/logout", { method: "POST" }),
     forgotPassword: (email: string) =>
       request<object>("/api/v1/auth/forgot-password", {
         method: "POST",

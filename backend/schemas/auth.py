@@ -8,8 +8,8 @@ class RegisterRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def password_strength(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
+        if len(v) < 8 or not any(c.isdigit() for c in v) or not any(c.isupper() for c in v):
+            raise ValueError("Passordet er for svakt")
         return v
 
 
@@ -30,8 +30,8 @@ class ResetPasswordRequest(BaseModel):
     @field_validator("new_password")
     @classmethod
     def password_strength(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
+        if len(v) < 8 or not any(c.isdigit() for c in v) or not any(c.isupper() for c in v):
+            raise ValueError("Passordet er for svakt")
         return v
 
 

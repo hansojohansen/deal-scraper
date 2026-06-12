@@ -1,22 +1,22 @@
-﻿from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from backend.api.routes import alerts, auth, b2b, cars, crm, health, outliers, stats, watchlist
 from backend.config import settings
 from backend.db.session import engine
 from backend.exceptions import ApiError, api_error_handler, generic_error_handler
+from backend.limiter import limiter
 from backend.middleware.logging import RequestLoggingMiddleware
-
-limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if len(settings.jwt_secret) < 32:
+        raise RuntimeError("JWT_SECRET must be at least 32 characters — set it in .env")
     yield
     await engine.dispose()
 
@@ -45,6 +45,16 @@ def create_app() -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none';"
+        )
         return response
 
     app.add_exception_handler(ApiError, api_error_handler)

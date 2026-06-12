@@ -1,45 +1,41 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
-
-interface User {
-  user_id: string;
-  email: string;
-  is_verified: boolean;
-  plan: "free" | "pro" | "dealer";
-}
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { api, type User } from "../api/client";
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
-  setTokenAndUser: (token: string, user: User) => void;
+  setUser: (user: User) => void;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    try {
-      const stored = localStorage.getItem("auth_user");
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUserState] = useState<User | null>(null);
+  const [ready, setReady] = useState(false);
 
-  const setTokenAndUser = useCallback((token: string, newUser: User) => {
-    localStorage.setItem("auth_token", token);
-    localStorage.setItem("auth_user", JSON.stringify(newUser));
-    setUser(newUser);
+  // Restore session from HttpOnly cookie on mount
+  useEffect(() => {
+    api.auth.getMe()
+      .then((u) => setUserState(u))
+      .catch(() => {})
+      .finally(() => setReady(true));
+  }, []);
+
+  const setUser = useCallback((newUser: User) => {
+    setUserState(newUser);
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("auth_token");
-    localStorage.removeItem("auth_user");
-    setUser(null);
+    api.auth.logout().catch(() => {});
+    setUserState(null);
   }, []);
 
+  // Don't render children until we know whether a session exists
+  if (!ready) return null;
+
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, setTokenAndUser, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, setUser, logout }}>
       {children}
     </AuthContext.Provider>
   );

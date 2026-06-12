@@ -4,7 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { api } from "../api/client";
 
 export default function Register() {
-  const { setTokenAndUser } = useAuth();
+  const { setUser } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -17,13 +17,11 @@ export default function Register() {
     e.preventDefault();
     setError("");
     if (password !== confirm) return setError("Passordene stemmer ikke overens");
-    if (password.length < 8) return setError("Passord må være minst 8 tegn");
     setLoading(true);
     try {
       await api.auth.register(email, password);
-      const { access_token } = await api.auth.login(email, password);
-      const user = await api.auth.getMe(access_token);
-      setTokenAndUser(access_token, user);
+      const user = await api.auth.login(email, password);
+      setUser(user);
       navigate("/alerts", { replace: true });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -50,7 +48,7 @@ export default function Register() {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-slate-400 font-medium">Passord (min. 8 tegn)</label>
+            <label className="text-xs text-slate-400 font-medium">Passord (min. 8 tegn, stor bokstav og tall)</label>
             <input
               type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500"

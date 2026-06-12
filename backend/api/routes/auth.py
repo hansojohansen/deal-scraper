@@ -1,17 +1,19 @@
+import hashlib
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
+from backend.db.crud import sessions as sessions_crud
 from backend.db.crud import users as users_crud
 from backend.dependencies import get_current_user, get_db
+from backend.limiter import limiter
 from backend.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
     RegisterRequest,
     ResetPasswordRequest,
-    TokenResponse,
     UserResponse,
 )
 from backend.security import (
@@ -26,9 +28,28 @@ from notifications.email import send_reset_email
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
+_COOKIE_NAME = "session"
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="strict",
+        max_age=settings.access_token_expire_hours * 3600,
+        path="/",
+    )
+
+
+def _clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(key=_COOKIE_NAME, path="/")
+
 
 @router.post("/register", response_model=UserResponse, status_code=201)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def register(request: Request, body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     existing = await users_crud.get_by_email(db, body.email)
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -38,22 +59,52 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     return UserResponse(user_id=str(user.id), email=user.email, is_verified=user.is_verified)
 
 
-@router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+@router.post("/login", response_model=UserResponse)
+@limiter.limit("5/minute")
+async def login(
+    request: Request,
+    body: LoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
     user = await users_crud.get_by_email(db, body.email)
     if not user or not verify_password(body.password, user.hashed_pw):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    return TokenResponse(access_token=create_access_token(str(user.id)))
+
+    token = create_access_token(str(user.id))
+    expires_at = datetime.now(UTC) + timedelta(hours=settings.access_token_expire_hours)
+
+    await sessions_crud.purge_expired(db, user.id)
+    await sessions_crud.create_session(db, user.id, token, expires_at)
+    await db.commit()
+
+    _set_session_cookie(response, token)
+    return UserResponse(
+        user_id=str(user.id),
+        email=user.email,
+        is_verified=user.is_verified,
+        plan=user.plan,
+    )
+
+
+@router.post("/logout", status_code=204)
+async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    token = request.cookies.get(_COOKIE_NAME)
+    if token:
+        await sessions_crud.delete_by_token(db, token)
+        await db.commit()
+    _clear_session_cookie(response)
 
 
 @router.post("/forgot-password", status_code=200)
-async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("3/minute")
+async def forgot_password(
+    request: Request, body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)
+):
     user = await users_crud.get_by_email(db, body.email)
     if user:
         raw = generate_reset_token()
-        expires = datetime.now(UTC) + timedelta(
-            minutes=settings.password_reset_expire_minutes
-        )
+        expires = datetime.now(UTC) + timedelta(minutes=settings.password_reset_expire_minutes)
         await users_crud.set_reset_token(db, user, hash_reset_token(raw), expires)
         await db.commit()
         try:
