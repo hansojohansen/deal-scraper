@@ -44,3 +44,4 @@ class UserResponse(BaseModel):
     user_id: str
     email: str
     is_verified: bool
+    plan: str = "free"

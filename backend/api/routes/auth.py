@@ -84,4 +84,5 @@ async def me(current_user=Depends(get_current_user)):
         user_id=str(current_user.id),
         email=current_user.email,
         is_verified=current_user.is_verified,
+        plan=getattr(current_user, "plan", "free"),
     )

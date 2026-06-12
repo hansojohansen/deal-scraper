@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Routes, Route, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Car, TrendingDown, BarChart2, Bell, Menu, X, LogOut, Bookmark, Zap } from "lucide-react";
+import { LayoutDashboard, Car, TrendingDown, BarChart2, Bell, Menu, X, LogOut, Bookmark, Zap, Radio } from "lucide-react";
 import { useAuth } from "./contexts/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
@@ -11,6 +11,7 @@ import Alerts from "./pages/Alerts";
 import Watchlist from "./pages/Watchlist";
 import Compare from "./pages/Compare";
 import Swipe from "./pages/Swipe";
+import ArbitrageRadar from "./pages/ArbitrageRadar";
 import CarDetail from "./pages/CarDetail";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -28,6 +29,7 @@ const nav = [
   { to: "/analytics", label: "Analytics", Icon: BarChart2 },
   { to: "/alerts", label: "Varsler", Icon: Bell },
   { to: "/watchlist", label: "Lagret", Icon: Bookmark },
+  { to: "/radar", label: "Radar", Icon: Radio },
 ];
 
 function NavItems({ onClick }: { onClick?: () => void }) {
@@ -117,6 +119,7 @@ function MainLayout() {
             <Route path="/watchlist" element={<ProtectedRoute><Watchlist /></ProtectedRoute>} />
             <Route path="/compare" element={<Compare />} />
             <Route path="/swipe" element={<Swipe />} />
+            <Route path="/radar" element={<ArbitrageRadar />} />
             <Route path="/cars/:id" element={<CarDetail />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

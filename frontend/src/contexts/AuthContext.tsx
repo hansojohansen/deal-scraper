@@ -4,6 +4,7 @@ interface User {
   user_id: string;
   email: string;
   is_verified: boolean;
+  plan: "free" | "pro" | "dealer";
 }
 
 interface AuthContextType {

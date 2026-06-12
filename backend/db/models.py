@@ -52,6 +52,7 @@ class User(Base):
     verify_token: Mapped[str | None] = mapped_column(Text)
     reset_token: Mapped[str | None] = mapped_column(Text)
     reset_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    plan: Mapped[str] = mapped_column(Text, default="free", server_default="free")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -203,6 +204,25 @@ class WatchlistItem(Base):
 
     user: Mapped["User"] = relationship(back_populates="watchlist")
     car: Mapped["Car"] = relationship()
+
+
+class DealEvent(Base):
+    """Denormalized event written each time a NEW outlier is detected. Used by SSE stream."""
+    __tablename__ = "deal_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    car_id: Mapped[int] = mapped_column(
+        ForeignKey("cars.id", ondelete="CASCADE"), nullable=False
+    )
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    quality_tier: Mapped[str | None] = mapped_column(Text)
+    brand: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str | None] = mapped_column(Text)
+    price: Mapped[int | None] = mapped_column(Integer)
+    image_url: Mapped[str | None] = mapped_column(Text)
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class AlertMatch(Base):

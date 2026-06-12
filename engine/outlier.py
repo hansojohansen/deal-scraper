@@ -21,7 +21,7 @@ import yaml
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import Car, OutlierScore, PriceHistory
+from backend.db.models import Car, DealEvent, OutlierScore, PriceHistory
 
 _cfg = yaml.safe_load(Path("config.yaml").read_text())["outlier"]
 _filter_cfg = yaml.safe_load(Path("config.yaml").read_text()).get("filter", {})
@@ -237,7 +237,9 @@ async def run_detection(db: AsyncSession) -> dict:
         removed = r.rowcount
 
     # 6. Apply upserts (updates in-place on tracked ORM objects, adds for new)
+    #    Write a DealEvent only for genuinely NEW outliers (not refreshes).
     upserted = len(to_upsert)
+    car_map = {c.id: c for c in all_cars}
     for car_id, vals in to_upsert:
         ex = existing_scores.get(car_id)
         if ex:
@@ -245,6 +247,17 @@ async def run_detection(db: AsyncSession) -> dict:
                 setattr(ex, k, v)
         else:
             db.add(OutlierScore(car_id=car_id, **vals))
+            car = car_map.get(car_id)
+            if car:
+                db.add(DealEvent(
+                    car_id=car_id,
+                    score=vals["score"],
+                    quality_tier=vals.get("quality_tier"),
+                    brand=car.brand,
+                    model=car.model,
+                    price=car.price,
+                    image_url=car.image_url,
+                ))
 
     await db.commit()
     return {"cars_checked": len(all_cars), "upserted": upserted, "removed": removed}
