@@ -1,14 +1,15 @@
-﻿from datetime import UTC, datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.db.models import Car
+from backend.db.models import Car, MarketStats
 from backend.dependencies import get_db
 from backend.schemas.stats import (
     BrandStatsResponse,
     KmBucket,
+    MarketStatsResponse,
     ModelSoldStats,
     ModelStatsResponse,
     PriceTrendPoint,
@@ -100,6 +101,33 @@ async def models_stats(brand: str, db: AsyncSession = Depends(get_db)):
             max_price=int(row[4] or 0),
         )
         for row in r
+    ]
+
+@router.get("/market", response_model=list[MarketStatsResponse])
+async def market_stats(
+    brand: str | None = None,
+    model: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Pre-computed market stats per brand/model: median price and avg days on market."""
+    q = select(MarketStats).order_by(MarketStats.sample_count.desc()).limit(100)
+    if brand:
+        q = q.where(MarketStats.brand.ilike(brand))
+    if model:
+        q = q.where(MarketStats.model.ilike(model))
+    result = await db.execute(q)
+    rows = list(result.scalars())
+    return [
+        MarketStatsResponse(
+            brand=r.brand,
+            model=r.model,
+            fuel_type=r.fuel_type,
+            median_price=r.median_price,
+            avg_price=r.avg_price,
+            avg_dom_days=r.avg_dom_days,
+            sample_count=r.sample_count,
+        )
+        for r in rows
     ]
 
 @router.get("/sold", response_model=SoldStatsResponse)

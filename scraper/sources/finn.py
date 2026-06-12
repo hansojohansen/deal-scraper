@@ -29,6 +29,21 @@ _FUEL_TYPES = {
 
 _TRANSMISSIONS = {"automat", "manuell", "direktegir"}
 
+_TRIM_RE = re.compile(
+    r"\b(Sport|Executive|Premium|Momentum|Elegance|Style|Plus|Base|Active|Trend|"
+    r"Progress|Dynamic|Advantage|Prestige|Luxury|SR|SE|LE|XLE|XSE|S-Line|M\s*Sport|"
+    r"AMG|GT|RS|xDrive|Titanium|Tekna|Acenta|Visia)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_trim_from_title(title: str | None) -> str | None:
+    if not title:
+        return None
+    m = _TRIM_RE.search(title)
+    return m.group(0) if m else None
+
+
 _BODY_TYPE_MAP = {
     "sedan": "sedan",
     "suv": "suv",
@@ -205,6 +220,7 @@ def _normalise(article, selectors: dict) -> dict | None:
         "listing_type": listing_type,
         "features": {},
         "image_url": image_url,
+        "trim_level": _extract_trim_from_title(title),
     }
 
 
@@ -329,6 +345,18 @@ def fetch_detail(url: str, session: requests.Session, delay: float = 1.2) -> dic
             num_m = re.search(r"\d+", value)
             if num_m:
                 result["num_owners"] = int(num_m.group())
+
+        elif any(k in label for k in ("versjon", "variant", "utstyrsnivå")):
+            if value and len(value) > 1:
+                result["trim_level"] = value.strip()
+
+    # Fallback: infer trim from page title if not found in structured data
+    if "trim_level" not in result:
+        h1 = soup.find("h1")
+        if h1:
+            t = _extract_trim_from_title(h1.get_text(strip=True))
+            if t:
+                result["trim_level"] = t
 
     return result
 

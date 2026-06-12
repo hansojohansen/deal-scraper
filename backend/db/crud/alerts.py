@@ -6,13 +6,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.models import AlertMatch, Car, DealAlert, OutlierScore
 
 _ALERT_CREATE_FIELDS = {
-    "brand", "model", "year_min", "year_max",
+    "alert_name", "brand", "model", "year_min", "year_max",
     "price_max", "mileage_max", "fuel_type", "is_active", "min_discount_pct",
+    "extra_filters",
 }
 _ALERT_UPDATE_FIELDS = {
-    "is_active", "price_max", "mileage_max", "year_min", "year_max",
-    "fuel_type", "min_discount_pct",
+    "is_active", "alert_name", "price_max", "mileage_max", "year_min", "year_max",
+    "fuel_type", "min_discount_pct", "extra_filters",
 }
+
+
+def _evaluate_extra_filters(car: "Car", extra: dict) -> bool:
+    """Evaluate extra_filters conditions against a car. Returns True if all pass."""
+    if not extra:
+        return True
+    signals = car.condition_signals or {}
+    for key, val in extra.items():
+        if key == "fuel_subtype":
+            if not car.fuel_type or str(val).lower() not in car.fuel_type.lower():
+                return False
+        elif key == "max_mileage_strict":
+            if car.mileage is None or car.mileage > int(val):
+                return False
+        elif key == "min_year_strict":
+            if car.year is None or car.year < int(val):
+                return False
+        elif isinstance(val, bool):
+            sig_val = signals.get(key)
+            if val and sig_val is not True:
+                return False
+            if not val and sig_val is True:
+                return False
+    return True
 
 
 async def create(db: AsyncSession, data: dict, user_id: uuid.UUID, notify_email: str) -> DealAlert:
@@ -84,6 +109,9 @@ async def match_for_car(db: AsyncSession, car: Car, outlier: OutlierScore | None
             a for a in alerts
             if a.min_discount_pct is None or actual_pct >= a.min_discount_pct
         ]
+
+    # Apply extra_filters (condition signals, strict mileage, fuel subtype, etc.)
+    alerts = [a for a in alerts if _evaluate_extra_filters(car, a.extra_filters or {})]
 
     return alerts
 

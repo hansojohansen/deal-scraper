@@ -16,6 +16,7 @@ const DISCOUNT_OPTIONS = [
 ];
 
 interface FormState {
+  alert_name: string;
   brand: string;
   model: string;
   year_min: string;
@@ -24,11 +25,15 @@ interface FormState {
   mileage_max: string;
   fuel_type: string;
   min_discount_pct: number | null;
+  req_service_history: boolean;
+  req_warranty: boolean;
+  req_no_accident: boolean;
 }
 
 const emptyForm: FormState = {
-  brand: "", model: "", year_min: "", year_max: "",
+  alert_name: "", brand: "", model: "", year_min: "", year_max: "",
   price_max: "", mileage_max: "", fuel_type: "", min_discount_pct: null,
+  req_service_history: false, req_warranty: false, req_no_accident: false,
 };
 
 function filtersToForm(f: CarFilters): Partial<FormState> {
@@ -90,6 +95,7 @@ export default function Alerts() {
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const body: AlertCreate = {};
+    if (form.alert_name) body.alert_name = form.alert_name;
     if (form.brand) body.brand = form.brand;
     if (form.model) body.model = form.model;
     if (form.year_min) body.year_min = Number(form.year_min);
@@ -98,6 +104,11 @@ export default function Alerts() {
     if (form.mileage_max) body.mileage_max = Number(form.mileage_max);
     if (form.fuel_type) body.fuel_type = form.fuel_type;
     if (form.min_discount_pct != null) body.min_discount_pct = form.min_discount_pct;
+    const extra: Record<string, unknown> = {};
+    if (form.req_service_history) extra.has_service_history = true;
+    if (form.req_warranty) extra.has_warranty = true;
+    if (form.req_no_accident) extra.has_accident_history = false;
+    if (Object.keys(extra).length > 0) body.extra_filters = extra;
     create.mutate(body);
   }
 
@@ -111,6 +122,9 @@ export default function Alerts() {
       <form onSubmit={submit} className="bg-slate-800 rounded-xl border border-slate-700 p-4 space-y-4">
         <p className="text-sm font-medium text-slate-300">Opprett nytt varsel</p>
         {error && <p className="text-sm text-red-400 bg-red-900/20 border border-red-800 rounded-lg px-3 py-2">{error}</p>}
+
+        <input placeholder="Varselnavn (valgfritt, f.eks. «Elbil Oslo»)" value={form.alert_name}
+          onChange={(e) => setForm((f) => ({ ...f, alert_name: e.target.value }))} className={inputCls} />
 
         <div className="grid grid-cols-2 gap-3">
           <select value={form.brand} onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))} className={selectCls}>
@@ -153,6 +167,24 @@ export default function Alerts() {
           </div>
         </div>
 
+        <details className="border border-slate-600 rounded-lg">
+          <summary className="px-3 py-2 text-xs font-medium text-slate-400 cursor-pointer select-none">Avanserte krav (tilstandssignaler)</summary>
+          <div className="px-3 pb-3 pt-1 space-y-2">
+            {[
+              { key: "req_service_history", label: "Krever servicehistorikk" },
+              { key: "req_warranty", label: "Krever garanti" },
+              { key: "req_no_accident", label: "Krever ulykkefri (bekreftet)" },
+            ].map(({ key, label }) => (
+              <label key={key} className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={(form as Record<string, unknown>)[key] as boolean}
+                  onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.checked }))}
+                  className="rounded border-slate-600 bg-slate-800 accent-amber-500" />
+                <span className="text-sm text-slate-300">{label}</span>
+              </label>
+            ))}
+          </div>
+        </details>
+
         <button type="submit" disabled={create.isPending} className="w-full bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-900 font-semibold rounded-lg px-5 py-2 text-sm transition-colors">
           {create.isPending ? "Lagrer…" : "Opprett varsel"}
         </button>
@@ -167,6 +199,7 @@ export default function Alerts() {
         {alerts?.map((a: Alert) => (
           <div key={a.id} className={`bg-slate-800 rounded-xl border p-4 flex items-start justify-between gap-4 ${a.is_active ? "border-slate-700" : "border-slate-800 opacity-60"}`}>
             <div className="text-sm space-y-0.5 min-w-0">
+              {a.alert_name && <p className="text-xs font-semibold text-amber-400">{a.alert_name}</p>}
               <p className="font-medium text-slate-200">
                 {[a.brand, a.model, a.year_min && `fra ${a.year_min}`, a.year_max && `til ${a.year_max}`, a.price_max && `≤${a.price_max.toLocaleString("no")} kr`, a.mileage_max && `≤${a.mileage_max.toLocaleString("no")} km`, a.fuel_type].filter(Boolean).join(" · ") || "Alle biler"}
               </p>

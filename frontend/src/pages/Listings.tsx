@@ -1,8 +1,9 @@
-﻿import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+﻿import { useState, useEffect, useRef, useMemo, memo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { SlidersHorizontal, X, Bell, Heart, Plus } from "lucide-react";
 import { api, type Car, type CarFilters } from "../api/client";
+import BargainGauge from "../components/BargainGauge";
 import { useAuth } from "../contexts/AuthContext";
 import { useCompare } from "../hooks/useCompare";
 
@@ -77,19 +78,15 @@ function ScoreChipBadges({ chips }: { chips: Car["score_chips"] }) {
   );
 }
 
-function CarCard({ car, savedIds, onToggleSave, compareIds, onToggleCompare }: {
+const CarCard = memo(function CarCard({ car, savedIds, onToggleSave, compareIds, onToggleCompare }: {
   car: Car;
   savedIds: Set<number>;
   onToggleSave: (car: Car) => void;
   compareIds: number[];
   onToggleCompare: (car: Car) => void;
 }) {
-  const discountPct = car.outlier_score
-    ? Math.round(Math.abs((car.price ?? 0) / car.outlier_score.peer_avg_price - 1) * 100)
-    : null;
   const eu = euBadge(car.eu_next_deadline);
   const initial = (car.brand ?? "?")[0].toUpperCase();
-  const barW = discountPct ? Math.min(100, (discountPct / 40) * 100) : 0;
   const isSaved = savedIds.has(car.id);
   const isInCompare = compareIds.includes(car.id);
   const monthlyCost = car.price ? Math.round(car.price / 60) : null;
@@ -100,7 +97,7 @@ function CarCard({ car, savedIds, onToggleSave, compareIds, onToggleCompare }: {
       <a href={car.url} target="_blank" rel="noreferrer" className="block">
         <div className={`relative h-[100px] ${car.image_url ? "" : brandColor(car.brand)} flex items-center justify-center overflow-hidden`}>
           {car.image_url
-            ? <img src={car.image_url} alt={car.title ?? ""} className="w-full h-full object-cover" />
+            ? <img src={car.image_url} alt={car.title ?? ""} className="w-full h-full object-cover" loading="lazy" decoding="async" />
             : <span className="text-white text-4xl font-bold opacity-30 select-none">{initial}</span>
           }
           <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
@@ -140,13 +137,8 @@ function CarCard({ car, savedIds, onToggleSave, compareIds, onToggleCompare }: {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {discountPct !== null && (
-              <div className="flex items-center gap-1.5">
-                <div className="w-12 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-green-500 rounded-full" style={{ width: `${barW}%` }} />
-                </div>
-                <span className="text-xs font-semibold text-green-400">-{discountPct}%</span>
-              </div>
+            {car.outlier_score && (
+              <BargainGauge score={car.outlier_score.score} size="sm" />
             )}
             <button
               onClick={(e) => { e.preventDefault(); onToggleSave(car); }}
@@ -170,7 +162,7 @@ function CarCard({ car, savedIds, onToggleSave, compareIds, onToggleCompare }: {
       </div>
     </div>
   );
-}
+});
 
 type SortMode = "newest" | "price_asc" | "price_desc" | "discount" | "auctions";
 
@@ -186,12 +178,32 @@ function sortCars(cars: Car[], mode: SortMode): Car[] {
   return c; // newest = server order
 }
 
+const FILTER_KEYS: (keyof CarFilters)[] = [
+  "brand", "model", "title", "year_min", "year_max", "price_min", "price_max",
+  "mileage_min", "mileage_max", "fuel_type", "listing_type", "transmission",
+  "seller_type", "drivetrain", "num_owners_max", "horsepower_min", "horsepower_max",
+  "is_norwegian_reg", "has_service_history", "accident_free", "monthly_cost_max",
+];
+
 export default function Listings() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated } = useAuth();
   const { ids: compareIds, add: addToCompare, remove: removeFromCompare } = useCompare();
-  const [filters, setFilters] = useState<CarFilters>(empty);
-  const [applied, setApplied] = useState<CarFilters>(empty);
+
+  // Applied filters always reflect URL — source of truth for the query
+  const applied = useMemo<CarFilters>(() => {
+    const f: CarFilters = {};
+    FILTER_KEYS.forEach((k) => { const v = searchParams.get(k); if (v) (f as Record<string, string>)[k] = v; });
+    return f;
+  }, [searchParams]);
+
+  const [filters, setFilters] = useState<CarFilters>(() => {
+    // Init form state from URL on first render
+    const f: CarFilters = {};
+    FILTER_KEYS.forEach((k) => { const v = searchParams.get(k); if (v) (f as Record<string, string>)[k] = v; });
+    return f;
+  });
   const [sort, setSort] = useState<SortMode>("newest");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
@@ -262,12 +274,17 @@ export default function Listings() {
   }, [hasNextPage, fetchNextPage]);
 
   const rawCars = data?.pages.flatMap((p) => p.items) ?? [];
-  const cars = sortCars(rawCars, sort);
+  const cars = useMemo(() => sortCars(rawCars, sort), [rawCars, sort]);
   const hasActiveFilters = Object.values(applied).some((v) => v !== "" && v != null);
   const activeCount = Object.values(applied).filter((v) => v !== "" && v != null).length;
 
-  function applyFilters() { setApplied({ ...filters }); setFiltersOpen(false); }
-  function clearFilters() { setFilters(empty); setApplied(empty); }
+  function applyFilters() {
+    const params = new URLSearchParams();
+    FILTER_KEYS.forEach((k) => { const v = (filters as Record<string, string>)[k]; if (v) params.set(k, v); });
+    setSearchParams(params, { replace: false });
+    setFiltersOpen(false);
+  }
+  function clearFilters() { setFilters(empty); setSearchParams(new URLSearchParams(), { replace: false }); }
 
   const FilterPanel = () => (
     <div className="space-y-4">

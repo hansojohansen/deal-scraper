@@ -12,6 +12,7 @@ _EXTRACTION_PROMPT = """Du analyserer en norsk bruktbil-annonse. Trekk ut strukt
 
 Svar KUN med gyldig JSON (ingen markdown, ingen forklaring). Eksempel på format:
 {
+  "trim_level": "Sport",
   "is_one_owner": true,
   "has_service_history": true,
   "has_accident_history": false,
@@ -34,6 +35,7 @@ Regler:
 - has_warranty: true hvis "garanti" nevnes
 - recently_serviced: true hvis "nylig service", "service utført", "ny service" nevnes
 - has_new_tires: true hvis "nye dekk", "nye hjul", "ny gummi" nevnes
+- trim_level: variantnavn (f.eks. "Sport", "Executive", "Premium") hvis nevnt i teksten, ellers null
 - is_imported: true hvis "importert", "utenlandsk", "grå import" nevnes
 - red_flags: liste med norske strenger for bekymringer (maks 3)
 - green_flags: liste med norske strenger for positive trekk (maks 3)

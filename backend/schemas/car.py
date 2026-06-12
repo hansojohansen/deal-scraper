@@ -48,6 +48,7 @@ class CarSummaryResponse(BaseModel):
     seller_type: str | None = None
     drivetrain: str | None = None
     num_owners: int | None = None
+    trim_level: str | None = None
     condition_signals: dict = {}
     reg_number: str | None = None
     first_reg_date: date | None = None

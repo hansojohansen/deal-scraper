@@ -79,6 +79,7 @@ export interface Car {
   horsepower: number | null;
   body_type: string | null;
   engine_size_cc: number | null;
+  trim_level: string | null;
   condition_signals: Record<string, unknown>;
   first_seen_at: string;
   last_seen_at: string | null;
@@ -159,9 +160,20 @@ export interface ModelStats {
   max_price: number;
 }
 
+export interface MarketStats {
+  brand: string;
+  model: string;
+  fuel_type: string;
+  median_price: number | null;
+  avg_price: number | null;
+  avg_dom_days: number | null;
+  sample_count: number;
+}
+
 export interface Alert {
   id: number;
   notify_email: string;
+  alert_name: string | null;
   brand: string | null;
   model: string | null;
   year_min: number | null;
@@ -171,10 +183,12 @@ export interface Alert {
   fuel_type: string | null;
   is_active: boolean;
   min_discount_pct: number | null;
+  extra_filters: Record<string, unknown>;
   created_at: string;
 }
 
 export interface AlertCreate {
+  alert_name?: string;
   brand?: string;
   model?: string;
   year_min?: number;
@@ -183,6 +197,7 @@ export interface AlertCreate {
   mileage_max?: number;
   fuel_type?: string;
   min_discount_pct?: number;
+  extra_filters?: Record<string, unknown>;
 }
 
 export interface CarFilters {
@@ -249,6 +264,12 @@ export const api = {
   getBrands: () => request<BrandStat[]>("/api/v1/stats/brands"),
   getModelStats: (brand: string) =>
     request<ModelStats[]>(`/api/v1/stats/models?brand=${encodeURIComponent(brand)}`),
+  getMarketStats: (brand?: string, model?: string) => {
+    const q = new URLSearchParams();
+    if (brand) q.set("brand", brand);
+    if (model) q.set("model", model);
+    return request<MarketStats[]>(`/api/v1/stats/market?${q}`);
+  },
   getOutliers: (limit = 50, quality_tier?: string) => {
     const q = new URLSearchParams({ limit: String(limit) });
     if (quality_tier) q.set("quality_tier", quality_tier);

@@ -1,6 +1,6 @@
-﻿from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import Integer, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -53,6 +53,7 @@ async def upsert_car(db: AsyncSession, item: dict) -> tuple[Car, bool]:
             body_type=item.get("body_type"),
             engine_size_cc=item.get("engine_size_cc"),
             image_url=item.get("image_url"),
+            trim_level=item.get("trim_level"),
             last_seen_at=now,
         )
         db.add(car)
@@ -68,6 +69,8 @@ async def upsert_car(db: AsyncSession, item: dict) -> tuple[Car, bool]:
         existing.status = "active"
         if item.get("image_url") and not existing.image_url:
             existing.image_url = item["image_url"]
+        if item.get("trim_level") and not existing.trim_level:
+            existing.trim_level = item["trim_level"]
 
         features = dict(existing.features or {})
         drop_at_str = features.get("price_dropped_at")
@@ -94,13 +97,19 @@ async def upsert_car(db: AsyncSession, item: dict) -> tuple[Car, bool]:
 
 
 async def mark_unseen_as_removed(db: AsyncSession, seen_urls: set[str], source: str) -> int:
-    """Mark listings not seen in the current run as 'removed'. Returns count."""
+    """Mark listings not seen in the current run as 'removed'. Stores dom_days. Returns count."""
     if not seen_urls:
         return 0
     result = await db.execute(
         update(Car)
         .where(Car.source == source, Car.status == "active", Car.url.not_in(seen_urls))
-        .values(status="removed")
+        .values(
+            status="removed",
+            dom_days=cast(
+                func.extract("epoch", func.now() - Car.first_seen_at) / 86400,
+                Integer,
+            ),
+        )
         .returning(Car.id)
     )
     return len(result.fetchall())

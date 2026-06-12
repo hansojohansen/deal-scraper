@@ -442,6 +442,15 @@ async def run(dry_run: bool = False, max_pages: int = 9999, enrich_details: bool
         print(f"[scraper] Detection failed: {exc}")
         summary["detection_error"] = str(exc)
 
+    # --- MARKET STATS ---
+    try:
+        from scraper.market_stats import compute_market_stats
+        async with session_factory() as db:
+            ms_result = await compute_market_stats(db)
+        summary["market_stats"] = ms_result
+    except Exception as exc:
+        print(f"[scraper] Market stats failed: {exc}")
+
     # --- DISPATCH alerts ---
     from agents.alert_agent import run as dispatch_alerts
     dispatch_result = await dispatch_alerts()

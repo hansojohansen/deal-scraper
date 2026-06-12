@@ -33,7 +33,7 @@ export default function Analytics() {
   // Scatter data: all cars for selected brand+model
   const { data: scatterPage } = useQuery({
     queryKey: ["scatterCars", brand, model],
-    queryFn: () => api.getCars({ brand, model, limit: 200 }),
+    queryFn: () => api.getCars({ brand, model, limit: 50 }),
     enabled: !!brand && !!model,
   });
   const scatterData = (scatterPage?.items ?? [])

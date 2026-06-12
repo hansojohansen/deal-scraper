@@ -23,6 +23,23 @@ class Base(DeclarativeBase):
     pass
 
 
+class MarketStats(Base):
+    __tablename__ = "market_stats"
+    __table_args__ = (UniqueConstraint("brand", "model", "fuel_type", name="uq_market_stats_model"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    brand: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    fuel_type: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    median_price: Mapped[int | None] = mapped_column(Integer)
+    avg_price: Mapped[int | None] = mapped_column(Integer)
+    avg_dom_days: Mapped[float | None] = mapped_column(Float)
+    sample_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -79,6 +96,8 @@ class Car(Base):
     drivetrain: Mapped[str | None] = mapped_column(Text)
     num_owners: Mapped[int | None] = mapped_column(Integer)
     condition_signals: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, server_default="{}")
+    trim_level: Mapped[str | None] = mapped_column(Text)
+    dom_days: Mapped[int | None] = mapped_column(Integer)
     reg_number: Mapped[str | None] = mapped_column(Text)
     first_reg_date: Mapped[date | None] = mapped_column(Date)
     has_lien: Mapped[bool | None] = mapped_column(Boolean)
@@ -155,6 +174,8 @@ class DealAlert(Base):
     notify_push: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     min_discount_pct: Mapped[int | None] = mapped_column(Integer)
     push_token: Mapped[str | None] = mapped_column(Text)
+    alert_name: Mapped[str | None] = mapped_column(Text)
+    extra_filters: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

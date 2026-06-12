@@ -67,6 +67,13 @@ def _windowed_median(
             )
         ]
         if len(peers) >= MIN_PEERS:
+            # Try trim-aware sub-group — same trim gives a more accurate fair value
+            trim = getattr(car, "trim_level", None)
+            if trim:
+                trim_peers = [p for p in peers if getattr(p, "trim_level", None) == trim]
+                if len(trim_peers) >= MIN_PEERS:
+                    peers = trim_peers
+
             fair_value = int(statistics.median(p.price for p in peers))
             reason = (
                 f"{car.price:,} NOK · medianpris for {len(peers)} tilsvarende "

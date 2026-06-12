@@ -44,3 +44,13 @@ class ModelSoldStats(BaseModel):
 class SoldStatsResponse(BaseModel):
     total_removed: int
     by_model: list[ModelSoldStats]
+
+
+class MarketStatsResponse(BaseModel):
+    brand: str
+    model: str
+    fuel_type: str
+    median_price: int | None
+    avg_price: int | None
+    avg_dom_days: float | None
+    sample_count: int
