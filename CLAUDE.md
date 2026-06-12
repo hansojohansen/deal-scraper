@@ -47,6 +47,17 @@ pytest
 ruff check .
 ```
 
+## B2B Plan Tiers
+
+`users.plan` column — values `free` / `pro` / `dealer` (default `free`).
+- Exposed in `GET /api/v1/auth/me` response and `AuthContext` user object.
+- `GET /api/v1/b2b/stream` (SSE Arbitrage Radar) requires `plan=pro` or `plan=dealer`.
+- To upgrade a user in dev: `UPDATE users SET plan='dealer' WHERE email='...'`
+
+**SSE Auth Note**: EventSource cannot send custom headers. The `/radar` page passes the JWT as `?token=TOKEN` in the URL. The `/b2b/stream` endpoint must read the token from the query param — see the fix documented in `handoff.md`.
+
+---
+
 ## Auth System
 
 Full JWT auth is implemented. Key files:
@@ -136,13 +147,15 @@ Run with `--enrich-details` to process 50 un-enriched cars per invocation.
 
 Algorithm: **windowed median** (`engine/outlier.py`) — finds same brand+model peers within ±1yr/±25k km (tight) or ±3yr/±50k km (loose fallback), uses their median as fair value. Minimum 3 peers required.
 
+- **Trim-aware sub-group** (Phase 1): after finding tight-window peers, if car has `trim_level` and ≥3 peers share it, uses that sub-group for a more accurate fair value.
 - Deal threshold: price >20% below peer median (`deal_threshold: -0.20` in `config.yaml`)
 - Stale threshold: remove flag when price rises within 5% of median (`stale_threshold: -0.05`)
 - Quality tiers: `excellent` (>25% below + Norwegian reg + valid EU), `good` (default deal), `check` (import or missing EU data), `skip` (price <30k NOK, >400k km, >3M NOK, or `listing_type='lease'`)
 - **`skip` tier cars do NOT get an OutlierScore** — they never appear in the deals view
-- `condition_adjusted_score` adjusts fair value ±5–10% based on `condition_signals` (service history, accident history, rust, owner count)
+- `condition_adjusted_score` adjusts fair value ±5–10% based on `condition_signals`
 - Detection pre-loads all cars + existing scores + recent price history in 3 bulk queries — no per-car DB queries in loop, avoids Supabase statement timeouts
 - Detection runs automatically at the end of every scraper run
+- **`deal_events` table** (Phase 2): written for genuinely *new* outliers only (not refreshes). Powers the SSE Arbitrage Radar stream.
 
 ## Data Quality
 
@@ -152,6 +165,14 @@ Run `python -m scraper.main --cleanup-prices` whenever bad data accumulates:
 3. Wipes ALL `outlier_scores` (clears stale scores from old algorithm versions)
 4. Re-runs full outlier detection on the clean dataset
 
+## Market Stats Pipeline
+
+`scraper/market_stats.py` — `compute_market_stats(db)` runs after each scraper cycle. Groups `status='removed'` cars by `(brand, model, fuel_type)`, computes `median_price`, `avg_price`, `avg_dom_days` (from `dom_days`), upserts into `market_stats` table (min 3 samples). Endpoint: `GET /api/v1/stats/market?brand=X&model=Y`.
+
+`dom_days` is set on cars when `mark_unseen_as_removed()` runs — computed as `EXTRACT(epoch FROM (NOW() - first_seen_at)) / 86400`.
+
+---
+
 ## API Design (mobile-ready from day one)
 
 - All list endpoints use **cursor pagination** (`WHERE id > $last` ORDER BY id) — never OFFSET
@@ -159,6 +180,35 @@ Run `python -m scraper.main --cleanup-prices` whenever bad data accumulates:
 - Every list endpoint has a `limit` param with a maximum cap (100)
 - API versioned at `/api/v1/`
 - `/api/v1/cars` accepts 24 filter params — see `backend/api/routes/cars.py`
+
+## Feature Status
+
+### Phase 1 — COMPLETE (migration 014)
+- `trim_level` extracted from finn.no detail pages + Gemini + title regex
+- `dom_days` stored when car is marked removed
+- `market_stats` table + pipeline + `/api/v1/stats/market` endpoint
+- `alert_name` + `extra_filters` JSONB on deal_alerts (hyper-specific alert matching)
+- `BargainGauge` SVG arc component replaces plain "−17%" text on cards
+- Listings filters persist to URL; `React.memo` on CarCard; `useMemo` on sort; lazy images
+- Analytics scatter capped at 50 cars (was 200)
+
+### Phase 2 — MOSTLY COMPLETE (migration 015)
+- `users.plan` column (`free`/`pro`/`dealer`)
+- `deal_events` table — written on new outlier detections
+- `GET /api/v1/b2b/stream` — SSE Arbitrage Radar (pro/dealer only)
+- `GET /api/v1/b2b/lookup-reg` — Vegvesen proxy for Trade-In Calculator
+- `/radar` page — `ArbitrageRadar.tsx`
+
+**Phase 2 remaining** (start next session here):
+1. Fix SSE auth bug — backend must read `?token=` query param (see `handoff.md`)
+2. `TradeInCalculator.tsx` — modal on CarDetail; uses `/b2b/lookup-reg` + `/stats/market`
+3. Analytics DOM column — "Snitt salgstid" from `getMarketStats(brand)` in `Analytics.tsx`
+
+### Phase 3 — NOT STARTED
+TCO Calculator, Compare market rows, CRM Kanban, Bulk Portfolio Analysis.
+See `okay-lets-make-some-eventual-eclipse.md` for full spec.
+
+---
 
 ## Product Direction (from deep-research-report.md)
 

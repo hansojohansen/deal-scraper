@@ -1,36 +1,98 @@
 # Project Handoff — deal-scraper
 
-## Current State (2026-06-02)
+## Current State (2026-06-12)
 
-**App is code-ready for deploy** — CI passes. Deploy fails because GitHub Secrets (`DEPLOY_HOST`, `DEPLOY_SSH_KEY`) need to be configured and the production `.env` on the droplet needs updating before the deploy workflow can SSH in.
+**App is code-ready for deploy** — CI passes. Deploy is blocked because GitHub Secrets
+(`DEPLOY_HOST`, `DEPLOY_SSH_KEY`) and the production `.env` on the droplet still need
+configuring. See Deployment Checklist below.
 
----
-
-## What's Working (locally verified)
-
-- **Scraper**: Runs every 6h via GitHub Actions cron. ~5 169 active listings (after cleaning bad data).
-- **Price parsing**: Leasing listings (kr/mnd) are now correctly rejected — monthly prices no longer appear as purchase prices.
-- **Price cap**: 3M NOK max enforced in `scraper/filters.py` and `config.yaml` (`filter.max_price_nok`). Impossible 30M NOK listings are rejected at ingest and marked removed on cleanup.
-- **Deal detection**: Windowed median (`engine/outlier.py`). Bulk pre-loads all data upfront — no per-car DB queries in loop, no statement timeouts on Supabase. `skip` tier cars never get an OutlierScore. 372 real deals currently flagged.
-- **Auth system** (migrations 010–011): Full JWT auth — register, login, forgot/reset password. `bcrypt` used directly (not `passlib` — incompatible with bcrypt 5.x).
-- **Detail enrichment** (`--enrich-details` flag): Fetches finn.no detail pages for up to 50 cars per run. Extracts description, color, seller_type, drivetrain, num_owners, EU inspection dates, body_type, engine_size_cc.
-- **Gemini description analysis** (`scraper/enrich.py`): Parses Norwegian listing descriptions into structured `condition_signals` JSONB: `is_one_owner`, `has_service_history`, `has_accident_history`, `has_rust`, `is_smoke_free`, `has_warranty`, `recently_serviced`, `has_new_tires`, `is_imported` + `green_flags`/`red_flags`. Runs after detail enrichment if `GEMINI_API_KEY` is set.
-- **Condition-adjusted deal score**: `condition_adjusted_score` on `OutlierScore` — fair value adjusted ±5–10% based on condition signals. Stored alongside raw score.
-- **Frontend filters**: 24 API filter params. UI has: brand/model, year, price, km range (min+max), fuel, transmission, drivetrain, seller type, horsepower range, max owners, listing type, norsk reg / servicehistorikk / ulykkefri checkboxes.
-- **Condition badges on cards**: Green (1 eier, servicebok, nylig serv.) and red (ulykke, rust, import) badges from `condition_signals`.
-- **Deals page**: Table + card views, sortable columns, tier filter (Topp/God/Sjekk), peer comparison panel. No stale ols/zscore scores — all 372 scores are clean median-based.
-- **Alerts**: User-scoped email notifications for deals matching saved filters.
-- **auksjonen.no scraper**: ~2 140 listings/run via JSON API.
+**Phase 1 (Stabilization & UX Lift) — COMPLETE**
+**Phase 2 (B2B Infrastructure) — MOSTLY COMPLETE** — one known bug + two items pending (see below)
+**Phase 3 (Ecosystem Expansion) — NOT STARTED**
 
 ---
 
-## Sources
+## What's Working
 
-| Source | Status | Notes |
-|--------|--------|-------|
-| finn.no | Working | ~5 169 active listings (post cleanup), full detail enrichment |
-| auksjonen.no | Working | ~2 140 listings/run via JSON API |
-| nettbil.no | Disabled | B2B dealer platform — requires Autosys credentials. Stub returns `[]`. |
+- **Scraper**: Runs every 6h via GitHub Actions cron. finn.no + auksjonen.no sources.
+- **Outlier detection**: Windowed median (`engine/outlier.py`). Trim-aware peer sub-group (3rd tier). Bulk pre-loads — no per-car queries in loop.
+- **Auth**: Full JWT auth — register, login, forgot/reset password. `bcrypt` directly (no passlib).
+- **Detail enrichment**: `--enrich-details` — fetches finn.no detail pages (50/run). Extracts EU dates, reg_number, body_type, drivetrain, num_owners, color, trim_level, seller_type.
+- **Gemini enrichment**: `condition_signals` JSONB + now extracts `trim_level` from descriptions.
+- **Official APIs**: Statens vegvesen (`first_reg_date`) + Brønnøysundregistrene (`has_lien`, `lien_amount`).
+- **Score chips**: `compute_score_chips()` in `backend/scoring/chips.py` — shown on all card surfaces.
+- **BargainGauge**: SVG arc gauge on listing cards (replaces plain "−17%" text).
+- **Market stats pipeline**: `scraper/market_stats.py` runs after each scrape. Upserts `median_price`, `avg_price`, `avg_dom_days` per brand/model into `market_stats` table.
+- **URL-persisted filters**: Listings page filters are in the URL (`?brand=Toyota&model=RAV4`).
+- **Watchlist, Compare, Swipe, Alerts, Watchlist pages**: All working.
+- **Alerts**: `extra_filters` JSONB for hyper-specific matching (condition signals, strict mileage). `alert_name` display field.
+- **User plan tiers**: `users.plan` column — values `free` / `pro` / `dealer`. Exposed in `/api/v1/auth/me`.
+- **deal_events table**: Written by `engine/outlier.py` on genuinely new outlier detections. Used by SSE stream.
+- **SSE Arbitrage Radar**: `GET /api/v1/b2b/stream` — polls `deal_events` every 30s. Requires `plan=pro/dealer`.
+- **`/radar` page**: `ArbitrageRadar.tsx` — live deal feed via EventSource, BargainGauge, watchlist save, upgrade prompt for free users.
+- **`/api/v1/b2b/lookup-reg`**: Vegvesen proxy for Trade-In Calculator (frontend component not yet built).
+
+---
+
+## Known Issues / Bugs
+
+### SSE Auth Bug (must fix before Phase 2 is complete)
+`ArbitrageRadar.tsx` passes the JWT as `?token=TOKEN` in the EventSource URL (browsers can't set headers on EventSource). But `backend/api/routes/b2b.py` uses `get_current_user` which only reads the `Authorization` header — it never reads the `?token=` query param.
+
+**Fix**: Update the `/stream` endpoint to accept token from query param:
+```python
+# In b2b.py stream_deals(), replace get_current_user dependency with:
+async def get_user_from_token_or_header(
+    token: str | None = Query(None),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
+):
+    raw = token or (credentials.credentials if credentials else None)
+    if not raw:
+        raise HTTPException(401, "Not authenticated")
+    user_id_str = decode_access_token(raw)
+    user = await users_crud.get_by_id(db, uuid.UUID(user_id_str))
+    if not user:
+        raise HTTPException(401, "User not found")
+    return user
+```
+Add this helper to `b2b.py` (imports: `uuid`, `Query`, `HTTPBearer`, `decode_access_token`, `users_crud`).
+
+### auksjonen mileage
+Always `NULL` — auksjonen.no API does not provide mileage.
+
+### Email not configured
+`send_reset_email` skips silently if `SMTP_*` env vars are unset. Recommend Resend or Postmark.
+
+### Email verification unimplemented
+`users.is_verified` exists but no email is sent on register. Drop the column or implement before launch.
+
+### Condition signals sparse
+`--enrich-details` only runs 50 cars/pass. Will fill gradually over scraper runs.
+
+### Auth uses localStorage
+JWT in localStorage (OWASP discourages). Planned: HttpOnly cookies + BFF pattern.
+
+---
+
+## Phase 2 — Remaining Items
+
+These were planned but not yet implemented:
+
+1. **SSE Auth Bug fix** (see above — must fix for `/radar` to work)
+2. **Trade-In Calculator** (`frontend/src/components/TradeInCalculator.tsx`) — modal on CarDetail and Dashboard. Uses `GET /api/v1/b2b/lookup-reg` (already built) + `GET /api/v1/stats/market` to compute trade-in/retail estimate.
+3. **Analytics DOM column** — Add "Snitt salgstid" column to the model stats table in `Analytics.tsx` using `getMarketStats(brand)` (already in `client.ts`).
+
+---
+
+## Phase 3 — Not Started
+
+From `okay-lets-make-some-eventual-eclipse.md`:
+
+1. **TCO Calculator** (`frontend/src/components/TCOCalculator.tsx`) — modal on CarDetail. No backend. Inputs: annual km, ZIP prefix, financing toggle. Outputs: monthly financing + fuel + insurance + tolls + depreciation.
+2. **Compare page market rows** — Add DOM, TCO, median price rows sourced from `market_stats`.
+3. **Migration 016 + CRM Kanban** — `crm_leads` table, `/api/v1/crm` routes, `/crm` Kanban page (dealer-only).
+4. **Bulk Portfolio Analysis** — `POST /api/v1/b2b/portfolio` returns fair_value + recommendation per car (dealer-only).
 
 ---
 
@@ -40,19 +102,46 @@
 |-----------|-------------|
 | 001–009 | Base schema, cars, price_history, outlier_scores, deal_alerts, image_url |
 | 010 | `users` table + `user_id` FK on `deal_alerts` |
-| 011 | Performance indexes on `cars.status`, `cars.source+status`, `cars.price`, `cars.mileage` |
-| 012 | `cars`: description, color, seller_type, drivetrain, num_owners, condition_signals (JSONB). `outlier_scores`: condition_adjusted_score |
+| 011 | Performance indexes |
+| 012 | `cars`: description, color, seller_type, drivetrain, num_owners, condition_signals. `outlier_scores`: condition_adjusted_score |
+| 013 | `cars`: reg_number, first_reg_date, has_lien, lien_amount, lien_checked_at. `watchlist_items` table |
+| 014 | `cars`: trim_level, dom_days. `deal_alerts`: alert_name, extra_filters JSONB. `market_stats` table. 3 composite indexes |
+| 015 | `users`: plan (default 'free'). `deal_events` table |
 
-Current head: **012**. Applied automatically on every deploy via `alembic upgrade head`.
+**Current head: 015**. Applied automatically on every deploy via `alembic upgrade head`.
 
 ---
 
-## Data Quality Rules
+## API Routes
 
-- Cars priced **< 30 000 NOK** are marked `status='removed'` — these are leasing monthly rates misread as purchase prices.
-- Cars priced **> 3 000 000 NOK** are marked `status='removed'` — parse errors.
-- Leasing cards (containing `kr/mnd` / `leasing` text) set `listing_type='lease'` and are filtered before DB storage.
-- Run `python -m scraper.main --cleanup-prices` to re-apply these rules and wipe/re-run outlier detection if bad data accumulates.
+| Prefix | File | Notes |
+|--------|------|-------|
+| `/api/v1/auth` | `routes/auth.py` | register, login, forgot/reset-password, me (returns plan) |
+| `/api/v1/cars` | `routes/cars.py` | list (24 filter params), brands/models, detail, price-history |
+| `/api/v1/outliers` | `routes/outliers.py` | top deals, peers |
+| `/api/v1/stats` | `routes/stats.py` | summary, brands, models, sold, **market** (new) |
+| `/api/v1/alerts` | `routes/alerts.py` | CRUD, supports extra_filters |
+| `/api/v1/watchlist` | `routes/watchlist.py` | add/remove/list saved cars |
+| `/api/v1/b2b` | `routes/b2b.py` | /stream (SSE), /lookup-reg (Vegvesen proxy) |
+| `/health` | `routes/health.py` | health check |
+
+---
+
+## Frontend Pages & Routes
+
+| Route | File | Auth |
+|-------|------|------|
+| `/` | Dashboard.tsx | public |
+| `/listings` | Listings.tsx | public — filters in URL |
+| `/outliers` | Outliers.tsx | public |
+| `/analytics` | Analytics.tsx | public |
+| `/swipe` | Swipe.tsx | public |
+| `/compare` | Compare.tsx | public |
+| `/cars/:id` | CarDetail.tsx | public |
+| `/alerts` | Alerts.tsx | required |
+| `/watchlist` | Watchlist.tsx | required |
+| `/radar` | ArbitrageRadar.tsx | required + plan=pro/dealer |
+| `/login`, `/register`, etc. | auth pages | public |
 
 ---
 
@@ -74,11 +163,32 @@ Then push to `master` — GitHub Actions builds frontend, scps dist, pulls, migr
 
 ---
 
+## Local Dev
+
+```bash
+# Backend (port 8080 — port 8000 has a stuck phantom process on this machine)
+uvicorn backend.main:app --port 8080 --reload
+
+# Frontend (Vite proxies /api → localhost:8080)
+cd frontend && npm run dev
+
+# Scraper
+python -m scraper.main                         # full scrape
+python -m scraper.main --enrich-details        # + detail pages (50/run)
+python -m scraper.main --cleanup-prices        # remove bad data, re-run detection
+
+# Migrations
+alembic upgrade head
+alembic current
+```
+
+---
+
 ## Architecture
 
 ```
-Internet → Nginx (80→443 redirect, 443 SSL giscademy.com)
-              ├── /        → frontend/dist/ (static React SPA)
+Internet → Nginx (80→443, SSL giscademy.com)
+              ├── /        → frontend/dist/ (React SPA)
               ├── /api/*   → backend:8000 (FastAPI)
               └── /health  → backend:8000/health
 
@@ -86,67 +196,4 @@ GitHub Actions (push to master):
   1. npm ci && npm run build
   2. scp frontend/dist/ → droplet
   3. ssh → git pull → alembic upgrade head → docker compose up -d --build
-```
-
-**Droplet**: DigitalOcean Ubuntu 24.04, `/home/deploy/deal-scraper`, `deploy` user runs Docker.
-
----
-
-## Local Dev Port Note
-
-Port 8000 has a phantom process on the dev machine that survives reboots. Backend runs on **port 8080** locally; `frontend/vite.config.ts` proxies `/api` and `/health` to `http://localhost:8080`. On the server (Docker), backend still binds 8000 internally.
-
----
-
-## Known Issues
-
-- **Email not configured**: `send_reset_email` skips silently if `SMTP_HOST`/`SMTP_USER` are unset. Forgot-password flow does nothing visible. Use Resend or Postmark.
-- **Email verification unimplemented**: `users.is_verified` column exists but no verification email is sent on register. Implement or drop before launch.
-- **auksjonen image URLs**: `image_url` is `NULL` for auksjonen listings — CDN prefix for `mainImage` not confirmed.
-- **auksjonen mileage**: Always `NULL`.
-- **Condition signals empty for most cars**: `--enrich-details` only runs 50 cars/pass. Gemini enrichment requires `GEMINI_API_KEY` in `.env`. Will fill in gradually over scraper runs.
-- **Auth uses localStorage**: JWT is stored in `localStorage` (OWASP warns against this). Planned upgrade: HttpOnly cookies + BFF pattern.
-
----
-
-## Next Features (from deep-research-report.md)
-
-Priority order based on the research report (`deep-research-report.md` in repo root):
-
-### Tier 1 — High impact
-1. **Statens vegvesen API** — Official technical vehicle data + PKK/EU-control history keyed by reg number. Free API (50k calls/day). Enriches normalization and deal scoring.
-2. **Brønnøysundregistrene lien check** — Løsøreregisteret vehicle API (free). "Heftelsefri ✓" badge = huge trust signal. Penalty in deal score if lien found.
-3. **Watchlist / Favorites** — `watchlist_items` table + heart button on cards + Watchlist page. Separate from saved searches/alerts.
-4. **Explainable score chips** — Replace plain "−17%" badge with reason chips: "8% under lokalmedian", "Heftelsefri", "EU ok til 2026", "Privat selger", "Prisnedgang siste 14 dager".
-5. **Compare view** — Side-by-side comparison of up to 4 cars.
-
-### Tier 2 — Medium effort
-6. **Swipe discovery deck** — Tinder-style like/pass/save with card prefetching.
-7. **Monthly cost filter + display** — Estimated monthly cost on cards (price ÷ 60 months).
-8. **Depreciation curve per model** — Use price_history data to show age/mileage chart on car detail page.
-9. **Liquidity/demand signal** — Time-to-removal from first_seen_at/last_seen_at. "Høy etterspørsel" badge.
-
-### Tier 3 — Longer term
-10. **Auth security upgrade** — Passkeys + Google/Apple OAuth + HttpOnly cookies + BFF pattern. OWASP warns against localStorage for JWT.
-11. **OFV commercial data** — Paid dataset with new prices, depreciation curves, equipment specs.
-
----
-
-## Useful Commands
-
-```bash
-# Run scraper manually (no page scraping, just auksjonen + enrich + detect)
-python -m scraper.main --enrich-details --max-pages 0
-
-# Full scrape
-python -m scraper.main
-
-# Clean up bad-price data and re-run detection
-python -m scraper.main --cleanup-prices
-
-# On droplet
-docker compose exec backend python -m scraper.main
-docker compose exec backend alembic current
-docker compose logs backend --tail=50
-docker compose up -d --build
 ```
