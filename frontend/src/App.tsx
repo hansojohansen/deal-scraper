@@ -83,7 +83,7 @@ function MainLayout() {
               Logg ut
             </button>
           )}
-          <p className="text-xs text-slate-600">finn.no · auksjonen</p>
+          <p className="text-xs text-slate-600">finn.no</p>
         </div>
       </aside>
 
