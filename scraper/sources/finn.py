@@ -111,9 +111,18 @@ _LEASE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+_DELBIL_PATTERNS = re.compile(
+    r"\bdelbil\b|til\s+deler|selges\s+(i|som)\s+deler|for\s+deler|selges\s+som\s+delbil",
+    re.IGNORECASE,
+)
+
 
 def _is_leasing_card(text: str) -> bool:
     return bool(_LEASE_PATTERNS.search(text))
+
+
+def _is_parts_car(text: str) -> bool:
+    return bool(_DELBIL_PATTERNS.search(text))
 
 
 def _parse_price(text: str) -> int | None:
@@ -201,7 +210,12 @@ def _normalise(article, selectors: dict) -> dict | None:
     image_url = img.get("src") if img else None
 
     card_text = article.get_text(" ", strip=True)
-    listing_type = "lease" if _is_leasing_card(card_text) else "buy_now"
+    if _is_leasing_card(card_text):
+        listing_type = "lease"
+    elif _is_parts_car(card_text) or (title and _is_parts_car(title)):
+        listing_type = "parts"
+    else:
+        listing_type = "buy_now"
 
     return {
         "source_id": source_id,

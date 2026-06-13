@@ -6,9 +6,9 @@ def is_relevant(item: dict, config: dict | None = None) -> bool:
     if not item.get("url") or not item.get("source_id"):
         return False
 
-    # Drop leasing listings — their monthly price (e.g. 3 500 kr/mnd) is
-    # misread as a purchase price, making them look like massive deals.
-    if item.get("listing_type") == "lease":
+    # Drop leasing and parts-car listings — leasing monthly prices are misread
+    # as purchase prices; parts cars are not roadworthy and skew statistics.
+    if item.get("listing_type") in ("lease", "parts"):
         return False
 
     if item.get("price") is None:
