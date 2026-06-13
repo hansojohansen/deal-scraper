@@ -9,7 +9,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, { ...options, headers, credentials: "include" });
 
   if (res.status === 401) {
-    window.location.href = "/login";
+    if (!window.location.pathname.startsWith("/login") && !window.location.pathname.startsWith("/register")) {
+      window.location.href = "/login";
+    }
     throw new Error("Session expired");
   }
 

@@ -192,7 +192,7 @@ export default function CRM() {
                   className="bg-slate-900 border border-slate-700 rounded-lg p-3 space-y-1.5 cursor-grab active:cursor-grabbing hover:border-slate-600 transition-colors"
                 >
                   <p className="text-sm font-medium text-slate-100 leading-snug">
-                    {lead.title ?? [lead.brand, lead.model, lead.year].filter(Boolean).join(" ") || "Navnløs lead"}
+                    {(lead.title ?? [lead.brand, lead.model, lead.year].filter(Boolean).join(" ")) || "Navnløs lead"}
                   </p>
                   {lead.price && (
                     <p className="text-xs text-amber-400 font-semibold">{lead.price.toLocaleString("no")} kr</p>
