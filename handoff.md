@@ -15,7 +15,7 @@ configuring. See Deployment Checklist below.
 
 ## What's Working
 
-- **Scraper**: Runs every 6h via GitHub Actions cron. finn.no + auksjonen.no sources.
+- **Scraper**: Runs every 6h via GitHub Actions cron. finn.no only (auksjonen.no removed).
 - **Outlier detection**: Windowed median (`engine/outlier.py`). Trim-aware peer sub-group (3rd tier). Bulk pre-loads — no per-car queries in loop.
 - **Auth**: HttpOnly session cookies (migration 017 + `user_sessions` table). Login/register/forgot/reset. `bcrypt` directly (no passlib). Rate-limited.
 - **Detail enrichment**: `--enrich-details` — fetches finn.no detail pages (50/run). Extracts EU dates, reg_number, body_type, drivetrain, num_owners, color, trim_level, seller_type.
@@ -42,8 +42,8 @@ configuring. See Deployment Checklist below.
 
 ## Known Issues / Bugs
 
-### auksjonen mileage
-Always `NULL` — auksjonen.no API does not provide mileage.
+### auksjonen.no data in DB
+Existing auksjonen.no cars scraped before removal are still in the DB as `status='active'`. Run once: `UPDATE cars SET status = 'removed' WHERE source = 'auksjonen.no' AND status = 'active';`
 
 ### Email not configured
 `send_reset_email` skips silently if `SMTP_*` env vars are unset. Recommend Resend or Postmark.
