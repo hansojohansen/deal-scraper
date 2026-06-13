@@ -5,9 +5,11 @@ B2B endpoints:
 """
 import asyncio
 import json
+import uuid
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +18,46 @@ from backend.db.models import Car, DealEvent, OutlierScore
 from backend.db.session import session_factory
 from backend.dependencies import get_current_user, get_db
 from backend.exceptions import ApiError
+from backend.security import decode_access_token
 from scraper.vegvesen import enrich_vegvesen
+
+_bearer = HTTPBearer(auto_error=False)
+
+
+async def _get_sse_user(
+    request: Request,
+    token: str | None = Query(None),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Auth for SSE endpoints: accepts ?token=, HttpOnly cookie, or Bearer header."""
+    from backend.db.crud import sessions as sessions_crud
+    from backend.db.crud import users as users_crud
+
+    cookie_token = request.cookies.get("session")
+
+    if token:
+        raw = token
+    elif cookie_token:
+        raw = cookie_token
+        session = await sessions_crud.get_by_token(db, cookie_token)
+        if not session:
+            raise HTTPException(status_code=401, detail="Session expired or revoked")
+    elif credentials:
+        raw = credentials.credentials
+    else:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    user_id_str = decode_access_token(raw)
+    try:
+        user_id = uuid.UUID(user_id_str)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user = await users_crud.get_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
 
 router = APIRouter(prefix="/api/v1/b2b", tags=["b2b"])
 
@@ -68,7 +109,7 @@ async def stream_deals(
     model: str | None = None,
     max_price: int | None = None,
     quality_tier: str | None = None,
-    current_user=Depends(get_current_user),
+    current_user=Depends(_get_sse_user),
 ):
     """Server-Sent Events stream of newly detected deals. Requires pro or dealer plan."""
     if getattr(current_user, "plan", "free") not in _PLAN_B2B:
