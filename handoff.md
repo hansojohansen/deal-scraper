@@ -1,14 +1,15 @@
 # Project Handoff — deal-scraper
 
-## Current State (2026-06-12)
+## Current State (2026-06-13)
 
 **App is code-ready for deploy** — CI passes. Deploy is blocked because GitHub Secrets
 (`DEPLOY_HOST`, `DEPLOY_SSH_KEY`) and the production `.env` on the droplet still need
 configuring. See Deployment Checklist below.
 
 **Phase 1 (Stabilization & UX Lift) — COMPLETE**
-**Phase 2 (B2B Infrastructure) — MOSTLY COMPLETE** — one known bug + two items pending (see below)
-**Phase 3 (Ecosystem Expansion) — NOT STARTED**
+**Phase 2 (B2B Infrastructure) — COMPLETE**
+**Phase 3 (Ecosystem Expansion) — COMPLETE**
+**Security Hardening — COMPLETE** (migration 017)
 
 ---
 
@@ -16,47 +17,30 @@ configuring. See Deployment Checklist below.
 
 - **Scraper**: Runs every 6h via GitHub Actions cron. finn.no + auksjonen.no sources.
 - **Outlier detection**: Windowed median (`engine/outlier.py`). Trim-aware peer sub-group (3rd tier). Bulk pre-loads — no per-car queries in loop.
-- **Auth**: Full JWT auth — register, login, forgot/reset password. `bcrypt` directly (no passlib).
+- **Auth**: HttpOnly session cookies (migration 017 + `user_sessions` table). Login/register/forgot/reset. `bcrypt` directly (no passlib). Rate-limited.
 - **Detail enrichment**: `--enrich-details` — fetches finn.no detail pages (50/run). Extracts EU dates, reg_number, body_type, drivetrain, num_owners, color, trim_level, seller_type.
-- **Gemini enrichment**: `condition_signals` JSONB + now extracts `trim_level` from descriptions.
+- **Gemini enrichment**: `condition_signals` JSONB + `trim_level` from descriptions.
 - **Official APIs**: Statens vegvesen (`first_reg_date`) + Brønnøysundregistrene (`has_lien`, `lien_amount`).
 - **Score chips**: `compute_score_chips()` in `backend/scoring/chips.py` — shown on all card surfaces.
-- **BargainGauge**: SVG arc gauge on listing cards (replaces plain "−17%" text).
-- **Market stats pipeline**: `scraper/market_stats.py` runs after each scrape. Upserts `median_price`, `avg_price`, `avg_dom_days` per brand/model into `market_stats` table.
+- **BargainGauge**: SVG arc gauge on listing cards.
+- **Market stats pipeline**: `scraper/market_stats.py` — upserts `median_price`, `avg_price`, `avg_dom_days` per brand/model after each scrape.
 - **URL-persisted filters**: Listings page filters are in the URL (`?brand=Toyota&model=RAV4`).
-- **Watchlist, Compare, Swipe, Alerts, Watchlist pages**: All working.
-- **Alerts**: `extra_filters` JSONB for hyper-specific matching (condition signals, strict mileage). `alert_name` display field.
-- **User plan tiers**: `users.plan` column — values `free` / `pro` / `dealer`. Exposed in `/api/v1/auth/me`.
-- **deal_events table**: Written by `engine/outlier.py` on genuinely new outlier detections. Used by SSE stream.
-- **SSE Arbitrage Radar**: `GET /api/v1/b2b/stream` — polls `deal_events` every 30s. Requires `plan=pro/dealer`.
-- **`/radar` page**: `ArbitrageRadar.tsx` — live deal feed via EventSource, BargainGauge, watchlist save, upgrade prompt for free users.
-- **`/api/v1/b2b/lookup-reg`**: Vegvesen proxy for Trade-In Calculator (frontend component not yet built).
+- **Watchlist, Compare, Swipe, Alerts pages**: All working.
+- **Alerts**: `extra_filters` JSONB for hyper-specific matching. `alert_name` display field.
+- **User plan tiers**: `users.plan` — `free` / `pro` / `dealer`. Exposed in `/api/v1/auth/me`.
+- **deal_events table**: Written by `engine/outlier.py` on genuinely new outlier detections.
+- **SSE Arbitrage Radar** (`/radar`): `GET /api/v1/b2b/stream` — polls `deal_events` every 30s. Requires `plan=pro/dealer`. Auth via HttpOnly cookie (`withCredentials: true`) — verified working end-to-end.
+- **Trade-In Calculator**: `TradeInCalculator.tsx` modal on CarDetail. Uses `/b2b/lookup-reg` + `/stats/market`.
+- **Analytics DOM column**: "Snitt salgstid" in model stats table from `market_stats`.
+- **TCO Calculator**: `TCOCalculator.tsx` modal on CarDetail. Client-side only — annual km, financing, fuel, insurance, tolls, depreciation.
+- **Compare market rows**: DOM, median price rows from `market_stats` on Compare page.
+- **CRM Kanban** (`/crm`): Dealer-only. `crm_leads` table (migration 016), `/api/v1/crm` routes, drag-and-drop Kanban board.
+- **Bulk Portfolio Analysis**: `POST /api/v1/b2b/portfolio` — fair_value + recommendation per car (dealer-only, max 50).
+- **Security hardening** (migration 017): `user_sessions` table, HttpOnly cookies, rate limiting, CSP/HSTS headers, DB CHECK constraints.
 
 ---
 
 ## Known Issues / Bugs
-
-### SSE Auth Bug (must fix before Phase 2 is complete)
-`ArbitrageRadar.tsx` passes the JWT as `?token=TOKEN` in the EventSource URL (browsers can't set headers on EventSource). But `backend/api/routes/b2b.py` uses `get_current_user` which only reads the `Authorization` header — it never reads the `?token=` query param.
-
-**Fix**: Update the `/stream` endpoint to accept token from query param:
-```python
-# In b2b.py stream_deals(), replace get_current_user dependency with:
-async def get_user_from_token_or_header(
-    token: str | None = Query(None),
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    db: AsyncSession = Depends(get_db),
-):
-    raw = token or (credentials.credentials if credentials else None)
-    if not raw:
-        raise HTTPException(401, "Not authenticated")
-    user_id_str = decode_access_token(raw)
-    user = await users_crud.get_by_id(db, uuid.UUID(user_id_str))
-    if not user:
-        raise HTTPException(401, "User not found")
-    return user
-```
-Add this helper to `b2b.py` (imports: `uuid`, `Query`, `HTTPBearer`, `decode_access_token`, `users_crud`).
 
 ### auksjonen mileage
 Always `NULL` — auksjonen.no API does not provide mileage.
@@ -70,29 +54,28 @@ Always `NULL` — auksjonen.no API does not provide mileage.
 ### Condition signals sparse
 `--enrich-details` only runs 50 cars/pass. Will fill gradually over scraper runs.
 
-### Auth uses localStorage
-JWT in localStorage (OWASP discourages). Planned: HttpOnly cookies + BFF pattern.
+### vite.config.ts proxies to port 8081
+`frontend/vite.config.ts` proxies `/api` to `localhost:8081`. Start the backend on 8081 locally, not 8080. (CLAUDE.md still says 8080 — one of them needs updating.)
 
 ---
 
-## Phase 2 — Remaining Items
+## Phase 2 — COMPLETE
 
-These were planned but not yet implemented:
-
-1. **SSE Auth Bug fix** (see above — must fix for `/radar` to work)
-2. **Trade-In Calculator** (`frontend/src/components/TradeInCalculator.tsx`) — modal on CarDetail and Dashboard. Uses `GET /api/v1/b2b/lookup-reg` (already built) + `GET /api/v1/stats/market` to compute trade-in/retail estimate.
-3. **Analytics DOM column** — Add "Snitt salgstid" column to the model stats table in `Analytics.tsx` using `getMarketStats(brand)` (already in `client.ts`).
+All items shipped:
+- `users.plan`, `deal_events`, SSE Arbitrage Radar stream
+- SSE auth: `_get_sse_user` in `b2b.py` accepts HttpOnly cookie via `withCredentials: true`
+- Trade-In Calculator (`TradeInCalculator.tsx`)
+- Analytics DOM column ("Snitt salgstid")
 
 ---
 
-## Phase 3 — Not Started
+## Phase 3 — COMPLETE
 
-From `okay-lets-make-some-eventual-eclipse.md`:
-
-1. **TCO Calculator** (`frontend/src/components/TCOCalculator.tsx`) — modal on CarDetail. No backend. Inputs: annual km, ZIP prefix, financing toggle. Outputs: monthly financing + fuel + insurance + tolls + depreciation.
-2. **Compare page market rows** — Add DOM, TCO, median price rows sourced from `market_stats`.
-3. **Migration 016 + CRM Kanban** — `crm_leads` table, `/api/v1/crm` routes, `/crm` Kanban page (dealer-only).
-4. **Bulk Portfolio Analysis** — `POST /api/v1/b2b/portfolio` returns fair_value + recommendation per car (dealer-only).
+All items shipped:
+- TCO Calculator (`TCOCalculator.tsx`)
+- Compare page market rows
+- CRM Kanban (migration 016, `crm_leads`, `/crm` page)
+- Bulk Portfolio Analysis (`POST /api/v1/b2b/portfolio`)
 
 ---
 
@@ -107,8 +90,10 @@ From `okay-lets-make-some-eventual-eclipse.md`:
 | 013 | `cars`: reg_number, first_reg_date, has_lien, lien_amount, lien_checked_at. `watchlist_items` table |
 | 014 | `cars`: trim_level, dom_days. `deal_alerts`: alert_name, extra_filters JSONB. `market_stats` table. 3 composite indexes |
 | 015 | `users`: plan (default 'free'). `deal_events` table |
+| 016 | `crm_leads` table |
+| 017 | `user_sessions` table, DB CHECK constraints, indexes for security hardening |
 
-**Current head: 015**. Applied automatically on every deploy via `alembic upgrade head`.
+**Current head: 017**. Applied automatically on every deploy via `alembic upgrade head`.
 
 ---
 
@@ -116,13 +101,14 @@ From `okay-lets-make-some-eventual-eclipse.md`:
 
 | Prefix | File | Notes |
 |--------|------|-------|
-| `/api/v1/auth` | `routes/auth.py` | register, login, forgot/reset-password, me (returns plan) |
+| `/api/v1/auth` | `routes/auth.py` | register, login, logout, forgot/reset-password, me (returns plan) |
 | `/api/v1/cars` | `routes/cars.py` | list (24 filter params), brands/models, detail, price-history |
 | `/api/v1/outliers` | `routes/outliers.py` | top deals, peers |
-| `/api/v1/stats` | `routes/stats.py` | summary, brands, models, sold, **market** (new) |
+| `/api/v1/stats` | `routes/stats.py` | summary, brands, models, sold, market |
 | `/api/v1/alerts` | `routes/alerts.py` | CRUD, supports extra_filters |
 | `/api/v1/watchlist` | `routes/watchlist.py` | add/remove/list saved cars |
-| `/api/v1/b2b` | `routes/b2b.py` | /stream (SSE), /lookup-reg (Vegvesen proxy) |
+| `/api/v1/b2b` | `routes/b2b.py` | /stream (SSE), /lookup-reg (Vegvesen proxy), /portfolio (bulk analysis) |
+| `/api/v1/crm` | `routes/crm.py` | CRUD for crm_leads (dealer-only) |
 | `/health` | `routes/health.py` | health check |
 
 ---
@@ -141,6 +127,8 @@ From `okay-lets-make-some-eventual-eclipse.md`:
 | `/alerts` | Alerts.tsx | required |
 | `/watchlist` | Watchlist.tsx | required |
 | `/radar` | ArbitrageRadar.tsx | required + plan=pro/dealer |
+| `/crm` | CRM.tsx | required + plan=dealer |
+| `/portfolio` | Portfolio.tsx | required + plan=dealer |
 | `/login`, `/register`, etc. | auth pages | public |
 
 ---
@@ -166,10 +154,10 @@ Then push to `master` — GitHub Actions builds frontend, scps dist, pulls, migr
 ## Local Dev
 
 ```bash
-# Backend (port 8080 — port 8000 has a stuck phantom process on this machine)
-uvicorn backend.main:app --port 8080 --reload
+# Backend — Vite proxies to port 8081
+uvicorn backend.main:app --port 8081 --reload
 
-# Frontend (Vite proxies /api → localhost:8080)
+# Frontend
 cd frontend && npm run dev
 
 # Scraper
@@ -180,6 +168,9 @@ python -m scraper.main --cleanup-prices        # remove bad data, re-run detecti
 # Migrations
 alembic upgrade head
 alembic current
+
+# Upgrade a user to dealer in dev
+# UPDATE users SET plan='dealer' WHERE email='...'
 ```
 
 ---
