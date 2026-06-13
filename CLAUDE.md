@@ -12,7 +12,7 @@ GitHub: https://github.com/hansojohansen/deal-scraper
 
 - **Backend**: Python 3.12, FastAPI (async), SQLAlchemy 2.0 async, asyncpg
 - **Database**: Supabase (hosted PostgreSQL) — connection string in `.env`
-- **Scraping**: requests + BeautifulSoup, Playwright for JS-rendered pages
+- **Scraping**: requests + BeautifulSoup (finn.no only)
 - **AI Enrichment**: Gemini Flash free tier (optional — degrades gracefully if `GEMINI_API_KEY` not set)
 - **Frontend**: React + Vite + TanStack Query + Tailwind CSS + Recharts
 - **Scheduling**: GitHub Actions cron (every 6h)
@@ -28,10 +28,10 @@ uv pip install -e ".[dev]"
 # Run DB migrations (requires .env with DATABASE_URL)
 alembic upgrade head
 
-# Start backend — use port 8080 locally (port 8000 has a stuck phantom process on the dev machine)
-uvicorn backend.main:app --port 8080 --reload
+# Start backend — use port 8081 locally (Vite proxies /api to 8081)
+uvicorn backend.main:app --port 8081 --reload
 
-# Start frontend (Vite proxies /api to localhost:8080)
+# Start frontend (Vite proxies /api to localhost:8081)
 cd frontend && npm install && npm run dev
 
 # Run scraper manually
@@ -45,6 +45,9 @@ pytest
 
 # Lint (CI runs this — must pass before deploy)
 ruff check .
+
+# Trigger deploy manually (requires workflow_dispatch in deploy.yml)
+gh workflow run deploy.yml --ref master
 ```
 
 ## B2B Plan Tiers
@@ -54,31 +57,30 @@ ruff check .
 - `GET /api/v1/b2b/stream` (SSE Arbitrage Radar) requires `plan=pro` or `plan=dealer`.
 - To upgrade a user in dev: `UPDATE users SET plan='dealer' WHERE email='...'`
 
-**SSE Auth Note**: EventSource cannot send custom headers. The `/radar` page passes the JWT as `?token=TOKEN` in the URL. The `/b2b/stream` endpoint must read the token from the query param — see the fix documented in `handoff.md`.
+**SSE Auth**: EventSource cannot send custom headers. The `/radar` page uses `withCredentials: true` — the HttpOnly session cookie is sent automatically. The `_get_sse_user` dependency in `b2b.py` also accepts `?token=` query param and Bearer header as fallback.
 
 ---
 
 ## Auth System
 
-Full JWT auth is implemented. Key files:
+Full session-cookie auth (migration 017). Key files:
 
-- `backend/security.py` — `hash_password`, `verify_password`, `create_access_token`, `decode_access_token`, `generate_reset_token`, `hash_reset_token`, `verify_reset_token`. Uses `bcrypt` package directly — **do not use `passlib`**, it is incompatible with bcrypt 5.x (its `detect_wrap_bug()` test sends a >72-byte password which bcrypt 5.x rejects with ValueError).
-- `backend/api/routes/auth.py` — `/api/v1/auth/{register,login,forgot-password,reset-password,me}`
+- `backend/security.py` — `hash_password`, `verify_password`, `create_access_token`, `decode_access_token`. Uses `bcrypt` directly — **do not use `passlib`**, incompatible with bcrypt 5.x.
+- `backend/api/routes/auth.py` — `/api/v1/auth/{register,login,logout,forgot-password,reset-password,me}`
 - `backend/db/crud/users.py` — async CRUD for `users` table
-- `backend/dependencies.py` — `get_current_user`, `get_current_user_optional` (HTTPBearer)
-- `frontend/src/contexts/AuthContext.tsx` — JWT stored in `localStorage`; auto-injects `Authorization: Bearer` header
+- `backend/db/crud/sessions.py` — async CRUD for `user_sessions` table
+- `backend/dependencies.py` — `get_current_user`, `get_current_user_optional`
+- `frontend/src/contexts/AuthContext.tsx` — session via HttpOnly cookie; `credentials: "include"` on all requests
 - `frontend/src/components/ProtectedRoute.tsx` — redirects to `/login` with `state.next` if unauthenticated
 
 Alerts require auth. Users see only their own alerts (filtered by `user_id`).
-
-**Known auth limitation**: JWT in `localStorage` is discouraged by OWASP. Planned upgrade: HttpOnly cookies + BFF pattern + passkeys/Google OAuth.
 
 ## Git Workflow
 
 After every meaningful change, commit and push:
 ```bash
 git add <files>
-git commit -m "feat: add finn.no scraper with pagination"
+git commit -m "feat: description"
 git push
 ```
 
@@ -86,14 +88,18 @@ Commit prefix conventions: `feat:` `fix:` `chore:` `test:` `docs:`
 
 ## Deployment
 
-Push to `master` triggers GitHub Actions auto-deploy:
+Push to `master` triggers GitHub Actions auto-deploy (`.github/workflows/deploy.yml`):
 1. Builds frontend (`npm ci && npm run build`) in CI
 2. SCPs `frontend/dist/` to droplet at `/home/deploy/deal-scraper/frontend/`
 3. SSHes to droplet: `git pull` → `alembic upgrade head` → `docker compose up -d --build`
 
+Can also be triggered manually: `gh workflow run deploy.yml --ref master`
+
 **Droplet**: DigitalOcean Ubuntu 24.04. App lives at `/home/deploy/deal-scraper`. The `deploy` user runs Docker.
 
 **Required GitHub Secrets**: `DEPLOY_HOST` (droplet IP), `DEPLOY_USER` (`deploy`), `DEPLOY_SSH_KEY` (ed25519 private key — must match a public key in `/home/deploy/.ssh/authorized_keys`).
+
+**Deploy blocker**: The droplet was unreachable as of 2026-06-13 — `ssh-keyscan` times out. Verify the droplet is running in DigitalOcean and that `DEPLOY_HOST` secret has the correct IP before retrying.
 
 **SSL**: Let's Encrypt certs at `/etc/letsencrypt/live/<domain>/`. Update `nginx/nginx.conf` with the real domain name when issuing the cert.
 
@@ -105,9 +111,9 @@ Internet → Nginx (80→443 redirect, 443 SSL)
               └── /health  → backend:8000/health
 ```
 
-**Before redeploying** — add to production `.env`:
+**Production `.env` on droplet** must include:
 ```
-JWT_SECRET=<strong-random-secret>
+JWT_SECRET=<generate: python3 -c "import secrets; print(secrets.token_hex(32))">
 ACCESS_TOKEN_EXPIRE_HOURS=24
 CORS_ORIGINS=["https://giscademy.com"]
 ```
@@ -122,11 +128,13 @@ CORS_ORIGINS=["https://giscademy.com"]
 
 ## Scraping Guidelines
 
+- Source: **finn.no only** (auksjonen.no removed 2026-06-13)
 - HTML selectors for finn.no are in `config.yaml` under `scraper.finn.selectors` — change them there, not in `finn.py`
 - When `scraper/sources/finn.py` returns 0 results, first check `config.yaml` selectors before editing code
-- Price parsing uses `article.get_text(" ", strip=True)` so "640 000 kr" stays as one string across HTML tag boundaries. If finn.no redesigns and prices break, set `selectors.price` in `config.yaml` to a CSS selector string — no code change needed.
+- Price parsing uses `article.get_text(" ", strip=True)` so "640 000 kr" stays as one string across HTML tag boundaries.
 - **Leasing detection**: `_parse_price()` returns `None` for cards containing `kr/mnd` / `leasing`. `_normalise()` sets `listing_type='lease'`. `is_relevant()` drops lease listings before DB storage.
-- **Price cap**: `config.yaml` → `filter.max_price_nok: 3000000`. `is_relevant()` rejects above this. Cars scraped before the cap: run `--cleanup-prices`.
+- **Parts-car detection**: `_is_parts_car()` matches "delbil"/"selges som deler" patterns. `is_relevant()` drops `listing_type='parts'`.
+- **Price cap**: `config.yaml` → `filter.max_price_nok: 3000000`. `is_relevant()` rejects above this.
 - Always write a `price_history` row when updating a car's price — never update `cars.price` without it
 - Rate limit: 1.2s delay between pages; respect robots.txt
 
@@ -147,15 +155,15 @@ Run with `--enrich-details` to process 50 un-enriched cars per invocation.
 
 Algorithm: **windowed median** (`engine/outlier.py`) — finds same brand+model peers within ±1yr/±25k km (tight) or ±3yr/±50k km (loose fallback), uses their median as fair value. Minimum 3 peers required.
 
-- **Trim-aware sub-group** (Phase 1): after finding tight-window peers, if car has `trim_level` and ≥3 peers share it, uses that sub-group for a more accurate fair value.
+- **Trim-aware sub-group**: after finding tight-window peers, if car has `trim_level` and ≥3 peers share it, uses that sub-group for a more accurate fair value.
 - Deal threshold: price >20% below peer median (`deal_threshold: -0.20` in `config.yaml`)
 - Stale threshold: remove flag when price rises within 5% of median (`stale_threshold: -0.05`)
 - Quality tiers: `excellent` (>25% below + Norwegian reg + valid EU), `good` (default deal), `check` (import or missing EU data), `skip` (price <30k NOK, >400k km, >3M NOK, or `listing_type='lease'`)
 - **`skip` tier cars do NOT get an OutlierScore** — they never appear in the deals view
 - `condition_adjusted_score` adjusts fair value ±5–10% based on `condition_signals`
-- Detection pre-loads all cars + existing scores + recent price history in 3 bulk queries — no per-car DB queries in loop, avoids Supabase statement timeouts
+- Detection pre-loads all cars + existing scores + recent price history in 3 bulk queries — no per-car DB queries in loop
 - Detection runs automatically at the end of every scraper run
-- **`deal_events` table** (Phase 2): written for genuinely *new* outliers only (not refreshes). Powers the SSE Arbitrage Radar stream.
+- **`deal_events` table**: written for genuinely *new* outliers only (not refreshes). Powers the SSE Arbitrage Radar stream.
 
 ## Data Quality
 
@@ -181,44 +189,31 @@ Run `python -m scraper.main --cleanup-prices` whenever bad data accumulates:
 - API versioned at `/api/v1/`
 - `/api/v1/cars` accepts 24 filter params — see `backend/api/routes/cars.py`
 
-## Feature Status
+## Feature Status — ALL COMPLETE
 
-### Phase 1 — COMPLETE (migration 014)
-- `trim_level` extracted from finn.no detail pages + Gemini + title regex
-- `dom_days` stored when car is marked removed
-- `market_stats` table + pipeline + `/api/v1/stats/market` endpoint
-- `alert_name` + `extra_filters` JSONB on deal_alerts (hyper-specific alert matching)
-- `BargainGauge` SVG arc component replaces plain "−17%" text on cards
-- Listings filters persist to URL; `React.memo` on CarCard; `useMemo` on sort; lazy images
-- Analytics scatter capped at 50 cars (was 200)
+### Phase 1 (migration 014)
+`trim_level`, `dom_days`, `market_stats`, `alert_name`/`extra_filters`, BargainGauge, URL-persisted filters, React.memo/useMemo optimisations.
 
-### Phase 2 — MOSTLY COMPLETE (migration 015)
-- `users.plan` column (`free`/`pro`/`dealer`)
-- `deal_events` table — written on new outlier detections
-- `GET /api/v1/b2b/stream` — SSE Arbitrage Radar (pro/dealer only)
-- `GET /api/v1/b2b/lookup-reg` — Vegvesen proxy for Trade-In Calculator
-- `/radar` page — `ArbitrageRadar.tsx`
+### Phase 2 (migration 015)
+`users.plan`, `deal_events`, SSE Arbitrage Radar, SSE HttpOnly cookie auth, Trade-In Calculator, Analytics DOM column.
 
-**Phase 2 remaining** (start next session here):
-1. Fix SSE auth bug — backend must read `?token=` query param (see `handoff.md`)
-2. `TradeInCalculator.tsx` — modal on CarDetail; uses `/b2b/lookup-reg` + `/stats/market`
-3. Analytics DOM column — "Snitt salgstid" from `getMarketStats(brand)` in `Analytics.tsx`
-
-### Phase 3 — NOT STARTED
+### Phase 3 (migration 016)
 TCO Calculator, Compare market rows, CRM Kanban, Bulk Portfolio Analysis.
-See `okay-lets-make-some-eventual-eclipse.md` for full spec.
+
+### Security Hardening (migration 017)
+`user_sessions`, HttpOnly cookies, rate limiting, CSP/HSTS headers, DB CHECK constraints.
+
+### UI Overhaul (2026-06-13)
+Listings page redesigned to classifieds/marketplace style (horizontal cards, white background). TypeScript build errors fixed. auksjonen.no removed.
 
 ---
 
 ## Product Direction (from deep-research-report.md)
 
-The research report (`deep-research-report.md` in repo root) describes the ideal Norwegian car deals product. Key directions:
-
-- **Official data first**: Statens vegvesen API (free, 50k calls/day) for technical data + PKK history. Brønnøysundregistrene Løsøreregisteret (free) for lien checks. These are the next major enrichment layer.
-- **Explainable scoring**: Every deal card should show reason chips ("8% under lokalmedian", "Heftelsefri", "EU ok til 2026") not just a percentage.
-- **Watchlist separate from alerts**: `watchlist_items` table for saving specific listings; `deal_alerts` for saved searches with notifications.
+- **Official data first**: Statens vegvesen API (free, 50k calls/day) for technical data + PKK history. Brønnøysundregistrene Løsøreregisteret (free) for lien checks.
+- **Explainable scoring**: Every deal card should show reason chips ("8% under lokalmedian", "Heftelsefri", "EU ok til 2026").
+- **Watchlist separate from alerts**: `watchlist_items` for specific listings; `deal_alerts` for saved searches with notifications.
 - **Target deal score weights**: 40% price vs fair value, 15% vehicle quality/risk, 15% liquidity, 10% spec desirability, 10% seller trust, 10% freshness/momentum.
-- **Swipe UX**: Additive discovery surface on top of search — not a replacement.
 - **FINN legal posture**: robots.txt and ToS prohibit systematic scraping. Current scraping works but treat official/partner API access as the long-term direction.
 
 ## ECC Reference

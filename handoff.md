@@ -15,7 +15,7 @@ configuring. See Deployment Checklist below.
 
 ## What's Working
 
-- **Scraper**: Runs every 6h via GitHub Actions cron. finn.no only (auksjonen.no removed).
+- **Scraper**: Runs every 6h via GitHub Actions cron. finn.no only (auksjonen.no removed 2026-06-13).
 - **Outlier detection**: Windowed median (`engine/outlier.py`). Trim-aware peer sub-group (3rd tier). Bulk pre-loads — no per-car queries in loop.
 - **Auth**: HttpOnly session cookies (migration 017 + `user_sessions` table). Login/register/forgot/reset. `bcrypt` directly (no passlib). Rate-limited.
 - **Detail enrichment**: `--enrich-details` — fetches finn.no detail pages (50/run). Extracts EU dates, reg_number, body_type, drivetrain, num_owners, color, trim_level, seller_type.
@@ -42,8 +42,8 @@ configuring. See Deployment Checklist below.
 
 ## Known Issues / Bugs
 
-### auksjonen.no data in DB
-Existing auksjonen.no cars scraped before removal are still in the DB as `status='active'`. Run once: `UPDATE cars SET status = 'removed' WHERE source = 'auksjonen.no' AND status = 'active';`
+### Deploy: droplet unreachable (2026-06-13)
+`ssh-keyscan` times out in GitHub Actions. Check DigitalOcean that the droplet is running and `DEPLOY_HOST` secret has the correct IP. Build itself is green — SSH is the only blocker. Trigger with `gh workflow run deploy.yml --ref master` once fixed.
 
 ### Email not configured
 `send_reset_email` skips silently if `SMTP_*` env vars are unset. Recommend Resend or Postmark.
@@ -94,6 +94,16 @@ All items shipped:
 | 017 | `user_sessions` table, DB CHECK constraints, indexes for security hardening |
 
 **Current head: 017**. Applied automatically on every deploy via `alembic upgrade head`.
+
+---
+
+## UI / Frontend (2026-06-13)
+
+- **Listings page**: Redesigned to classifieds/marketplace style — horizontal cards (`h-36`), white background, minimal rounding. Filters URL-persisted, scroll-to-top on filter change, active filter badge.
+- **Parts-car filter**: `_is_parts_car()` in `finn.py` catches "delbil"/"selges som deler" and sets `listing_type='parts'`. `is_relevant()` drops these before DB storage.
+- **auksjonen.no removed**: Sidebar label updated to "finn.no". DB had 0 active auksjonen rows.
+- **TypeScript build**: Fixed 3 errors (`Alerts.tsx` cast, `Compare.tsx` unused var, `client.ts` ScoreChip type) — build is now green.
+- **deploy.yml**: Added `workflow_dispatch` trigger so deploys can be triggered manually with `gh workflow run deploy.yml --ref master`.
 
 ---
 
