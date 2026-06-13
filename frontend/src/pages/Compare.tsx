@@ -141,7 +141,7 @@ export default function Compare() {
             {/* Monthly cost row */}
             <tr className="border-b border-slate-700/50 hover:bg-slate-800/50">
               <td className="px-4 py-2.5 text-xs font-medium text-slate-400 whitespace-nowrap">Månedskostnad</td>
-              {cars.map((car, i) => {
+              {cars.map((car) => {
                 const monthly = car.price ? Math.round(car.price / 60) : null;
                 const allMonthly = cars.map((c) => c.price ? Math.round(c.price / 60) : null);
                 const minMonthly = Math.min(...allMonthly.filter((v): v is number => v !== null));

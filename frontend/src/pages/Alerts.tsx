@@ -176,7 +176,7 @@ export default function Alerts() {
               { key: "req_no_accident", label: "Krever ulykkefri (bekreftet)" },
             ].map(({ key, label }) => (
               <label key={key} className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={(form as Record<string, unknown>)[key] as boolean}
+                <input type="checkbox" checked={(form as unknown as Record<string, unknown>)[key] as boolean}
                   onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.checked }))}
                   className="rounded border-slate-600 bg-slate-800 accent-amber-500" />
                 <span className="text-sm text-slate-300">{label}</span>

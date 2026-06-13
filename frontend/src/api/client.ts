@@ -92,7 +92,7 @@ export interface OutlierScore {
   method: string | null;
   quality_tier: string | null;
   condition_adjusted_score: number | null;
-  score_chips: Array<{ label: string; type: string }>;
+  score_chips: ScoreChip[];
 }
 
 export interface PeerCar {
