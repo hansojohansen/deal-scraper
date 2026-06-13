@@ -72,9 +72,9 @@ const CarCard = memo(function CarCard({ car, savedIds, onToggleSave, compareIds,
   const isInCompare = compareIds.includes(car.id);
 
   return (
-    <div className="bg-white border border-gray-200 hover:border-blue-400 hover:shadow-md transition-all rounded flex overflow-hidden">
+    <div className="bg-white border border-gray-200 hover:border-blue-400 hover:shadow-md transition-all rounded flex overflow-hidden h-36">
       {/* Image */}
-      <a href={car.url} target="_blank" rel="noreferrer" className="shrink-0 w-44 sm:w-52 bg-gray-100 overflow-hidden">
+      <a href={car.url} target="_blank" rel="noreferrer" className="shrink-0 w-48 bg-gray-100 overflow-hidden">
         {car.image_url
           ? <img src={car.image_url} alt={car.title ?? ""} className="w-full h-full object-cover" loading="lazy" decoding="async" />
           : <div className="w-full h-full flex items-center justify-center text-gray-300 text-4xl font-bold select-none">{(car.brand ?? "?")[0]}</div>

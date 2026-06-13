@@ -1,7 +1,7 @@
 """
 Scraper orchestrator: COLLECT -> FILTER -> STORE
 ECC pattern: iterative retrieval with cursor state persistence.
-Supports multiple sources: finn.no, nettbil, auksjonen.
+Source: finn.no only.
 
 Resilience features:
 - Per-batch cursor checkpointing (every BATCH_SIZE pages)
@@ -20,7 +20,7 @@ from pathlib import Path
 import yaml
 
 from scraper.filters import is_relevant
-from scraper.sources import auksjonen, finn, nettbil
+from scraper.sources import finn, nettbil
 
 CURSOR_FILE = Path("scraper/state/cursor.json")
 FEEDBACK_FILE = Path("data/feedback.json")
@@ -369,7 +369,7 @@ async def run(dry_run: bool = False, max_pages: int = 9999, enrich_details: bool
 
     # --- OTHER SOURCES ---
     all_other_items: list[dict] = []
-    for source_key, source_module in [("nettbil", nettbil), ("auksjonen", auksjonen)]:
+    for source_key, source_module in [("nettbil", nettbil)]:
         source_session = source_module.build_session()
         try:
             items = source_module.fetch_all(source_session, max_pages=max_pages)
@@ -531,7 +531,7 @@ async def _cleanup_prices() -> dict:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Car scraper — finn.no, nettbil, auksjonen")
+    parser = argparse.ArgumentParser(description="Car scraper — finn.no")
     parser.add_argument("--dry-run", action="store_true", help="Fetch but don't write to DB")
     parser.add_argument("--max-pages", type=int, default=9999, help="Max pages per source (50 cars/page). Default: all pages.")
     parser.add_argument("--enrich-details", action="store_true", help="Fetch finn.no detail pages for EU/reg/hp data")
